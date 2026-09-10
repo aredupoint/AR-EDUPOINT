@@ -641,13 +641,36 @@
     return !!(SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('YOUR_SUPABASE') && !SUPABASE_KEY.includes('YOUR_SUPABASE'));
   }
 
-  function initSupabase(){
-    // Direct REST transport: publishable keys are sent via `apikey`.
-    // Do not send sb_publishable_* as `Authorization: Bearer ...`.
+  let SUPABASE_LIBRARY_PROMISE = null;
+  function loadSupabaseLibrary(){
+    if (window.supabase && typeof window.supabase.createClient === 'function') return Promise.resolve(true);
+    if (SUPABASE_LIBRARY_PROMISE) return SUPABASE_LIBRARY_PROMISE;
+    SUPABASE_LIBRARY_PROMISE = new Promise(resolve => {
+      const script = document.createElement('script');
+      script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
+      script.async = true;
+      let done = false;
+      const finish = ok => { if (done) return; done = true; resolve(ok); };
+      script.onload = () => finish(!!(window.supabase && typeof window.supabase.createClient === 'function'));
+      script.onerror = () => finish(false);
+      document.head.appendChild(script);
+      setTimeout(() => finish(false), SUPABASE_LOAD_TIMEOUT_MS);
+    });
+    return SUPABASE_LIBRARY_PROMISE;
+  }
+
+  async function initSupabase(){
     try {
-      SUPABASE_READY = supabaseConfigured();
-      SUPABASE = SUPABASE_READY ? { rest: true } : null;
-      return SUPABASE_READY;
+      if (!supabaseConfigured()) throw new Error('Supabase URL/key is not configured.');
+      const sdkLoaded = await loadSupabaseLibrary();
+      if (!sdkLoaded) throw new Error('Supabase JS library could not load.');
+      SUPABASE = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
+        global: { headers: { 'x-client-info': 'ar-edupoint-html' } }
+      });
+      SUPABASE_READY = true;
+      SUPABASE_LAST_ERROR = '';
+      return true;
     } catch (e) {
       SUPABASE_READY = false;
       SUPABASE = null;
@@ -718,43 +741,22 @@
     let lastErr = null;
     for(let attempt=0; attempt<SUPABASE_MAX_RETRIES; attempt++){
       try {
+        if (SUPABASE && typeof SUPABASE.from === 'function') {
+          const payload = { storage_key: storageKey, state: JSON.parse(value), updated_at: new Date().toISOString() };
+          const { error } = await SUPABASE.from(SUPABASE_TABLE).upsert(payload, { onConflict: 'storage_key' });
+          if (error) throw new Error(error.message || String(error));
+          const { data, error: verifyError } = await SUPABASE.from(SUPABASE_TABLE).select('state').eq('storage_key', storageKey).maybeSingle();
+          if (verifyError) throw new Error('Supabase verification: ' + (verifyError.message || String(verifyError)));
+          if (!data || stableJson(data.state) !== stableJson(JSON.parse(value))) throw new Error('Supabase write verification failed for ' + storageKey);
+          return true;
+        }
         const url = supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE) + '?on_conflict=storage_key');
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: supabaseRestHeaders({
-            'Content-Type': 'application/json',
-            'Prefer': 'resolution=merge-duplicates,return=minimal'
-          }),
-          body: JSON.stringify([{
-            storage_key: storageKey,
-            state: JSON.parse(value),
-            updated_at: new Date().toISOString()
-          }])
-        });
-        if (!response.ok) {
-          let detail = '';
-          try { detail = await response.text(); } catch(e) {}
-          throw new Error('Supabase HTTP ' + response.status + (detail ? ': ' + detail : ''));
-        }
-
-        // Read-after-write verification prevents silent successful-looking writes.
-        const verify = await fetch(
-          supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE) + '?storage_key=eq.' + encodeURIComponent(storageKey) + '&select=state'),
-          { headers: supabaseRestHeaders() }
-        );
-        if (!verify.ok) {
-          let detail = '';
-          try { detail = await verify.text(); } catch(e) {}
-          throw new Error('Supabase verification HTTP ' + verify.status + (detail ? ': ' + detail : ''));
-        }
-        const rows = await verify.json();
-        if (!Array.isArray(rows) || !rows.length || stableJson(rows[0].state) !== stableJson(JSON.parse(value))) {
-          throw new Error('Supabase write verification failed for ' + storageKey);
-        }
+        const response = await fetch(url, { method:'POST', headers:supabaseRestHeaders({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}), body:JSON.stringify([{storage_key:storageKey,state:JSON.parse(value),updated_at:new Date().toISOString()}]) });
+        if (!response.ok) { let detail=''; try{detail=await response.text();}catch(e){} throw new Error('Supabase HTTP '+response.status+(detail?': '+detail:'')); }
         return true;
       } catch(e){
-        lastErr = e;
-        if (attempt < SUPABASE_MAX_RETRIES - 1) await sleep(SUPABASE_RETRY_BASE_MS * Math.pow(2, attempt));
+        lastErr=e;
+        if(attempt<SUPABASE_MAX_RETRIES-1) await sleep(SUPABASE_RETRY_BASE_MS*Math.pow(2,attempt));
       }
     }
     throw lastErr || new Error('Supabase write failed.');
@@ -765,20 +767,18 @@
     let lastErr = null;
     for(let attempt=0; attempt<SUPABASE_MAX_RETRIES; attempt++){
       try {
-        const response = await fetch(
-          supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE) + '?storage_key=eq.' + encodeURIComponent(storageKey) + '&select=state'),
-          { headers: supabaseRestHeaders() }
-        );
-        if (!response.ok) {
-          let detail = '';
-          try { detail = await response.text(); } catch(e) {}
-          throw new Error('Supabase HTTP ' + response.status + (detail ? ': ' + detail : ''));
+        if (SUPABASE && typeof SUPABASE.from === 'function') {
+          const { data, error } = await SUPABASE.from(SUPABASE_TABLE).select('state').eq('storage_key', storageKey).maybeSingle();
+          if (error) throw new Error(error.message || String(error));
+          return data ? JSON.stringify(data.state) : null;
         }
-        const rows = await response.json();
-        return Array.isArray(rows) && rows.length ? JSON.stringify(rows[0].state) : null;
+        const response = await fetch(supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE)+'?storage_key=eq.'+encodeURIComponent(storageKey)+'&select=state'),{headers:supabaseRestHeaders()});
+        if(!response.ok){let detail='';try{detail=await response.text();}catch(e){}throw new Error('Supabase HTTP '+response.status+(detail?': '+detail:''));}
+        const rows=await response.json();
+        return Array.isArray(rows)&&rows.length?JSON.stringify(rows[0].state):null;
       } catch(e){
-        lastErr = e;
-        if (attempt < SUPABASE_MAX_RETRIES - 1) await sleep(SUPABASE_RETRY_BASE_MS * Math.pow(2, attempt));
+        lastErr=e;
+        if(attempt<SUPABASE_MAX_RETRIES-1) await sleep(SUPABASE_RETRY_BASE_MS*Math.pow(2,attempt));
       }
     }
     throw lastErr || new Error('Supabase read failed.');
@@ -975,7 +975,7 @@
     render();
 
     const remoteKnown = Object.create(null);
-    const libraryLoaded = initSupabase();
+    const libraryLoaded = await initSupabase();
     updateSyncIndicator();
 
     // Read remote data only when there is no newer local queued change. Each key is
