@@ -60,64 +60,6 @@ jobs:
           cat > app/src/main/java/com/aredupoint/app/MainActivity.java <<'EOF'
           package com.aredupoint.app;
 
-          import android.app.Activity;
-          import android.os.Bundle;
-          import android.view.View;
-          import android.webkit.WebSettings;
-          import android.webkit.WebView;
-          import android.webkit.WebViewClient;
-
-          public class MainActivity extends Activity {
-
-              private WebView webView;
-
-              @Override
-              protected void onCreate(Bundle savedInstanceState) {
-                  super.onCreate(savedInstanceState);
-
-                  webView = new WebView(this);
-                  setContentView(webView);
-
-                  WebSettings settings = webView.getSettings();
-                  settings.setJavaScriptEnabled(true);
-                  settings.setDomStorageEnabled(true);
-                  settings.setSupportZoom(true);
-                  settings.setBuiltInZoomControls(true);
-                  settings.setDisplayZoomControls(false);
-                  settings.setUseWideViewPort(true);
-                  settings.setLoadWithOverviewMode(false);
-                  settings.setTextZoom(100);
-
-                  webView.setWebViewClient(new WebViewClient());
-
-                  webView.loadUrl("https://aredupoint.github.io/AR-EDUPOINT/");
-              }
-
-              @Override
-              public void onBackPressed() {
-                  if (webView != null && webView.canGoBack()) {
-                      webView.goBack();
-                  } else {
-                      super.onBackPressed();
-                  }
-              }
-
-              @Override
-              protected void onDestroy() {
-                  if (webView != null) {
-                      webView.destroy();
-                  }
-                  super.onDestroy();
-              }
-          }
-          EOF
-
-              - name: Enable Desktop View
-        working-directory: android-build
-        run: |
-          cat > app/src/main/java/com/aredupoint/app/MainActivity.java <<'EOF'
-          package com.aredupoint.app;
-
           import android.annotation.SuppressLint;
           import android.app.Activity;
           import android.os.Bundle;
@@ -149,21 +91,17 @@ jobs:
                   settings.setDomStorageEnabled(true);
                   settings.setDatabaseEnabled(true);
 
-                  // Desktop browser style rendering
                   settings.setUseWideViewPort(true);
                   settings.setLoadWithOverviewMode(true);
 
-                  // Desktop Chrome user agent
                   settings.setUserAgentString(
                           "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
                           + "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
                   );
 
-                  // Pinch zoom
                   settings.setSupportZoom(true);
                   settings.setBuiltInZoomControls(true);
                   settings.setDisplayZoomControls(false);
-
                   settings.setTextZoom(100);
 
                   settings.setMediaPlaybackRequiresUserGesture(false);
