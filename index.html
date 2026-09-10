@@ -619,7 +619,8 @@
   const LOCAL_QUEUE_KEY = 'ar-edupoint-sync-queue:v1';
   // Dedicated durable mirror for staff attendance. This prevents attendance from disappearing
   // on refresh if the remote request is temporarily unavailable.
-  const STAFF_ATT_LOCAL_KEY = 'ar-edupoint-staff-attendance:v1';
+  const STAFF_ATT_LOCAL_KEY = 'ar-edupoint-staff-attendance:v2';
+  const STAFF_ATT_LEGACY_KEYS = ['ar-edupoint-staff-attendance:v1'];
   let SUPABASE = null;
   let SUPABASE_READY = false;
   let SUPABASE_LAST_ERROR = '';
@@ -866,6 +867,10 @@
       }
     }
 
+    // Restore staff attendance from the dedicated device mirror before the first render.
+    // This path is independent of Supabase availability.
+    mergeStaffAttendanceMirror();
+
     // Critical fail-safe: render the application before any network operation.
     // A CDN outage, content:// restriction, DNS failure, or Supabase timeout can
     // therefore never produce a permanent white screen.
@@ -895,9 +900,8 @@
         }
       }));
 
-      // Staff Attendance has a second local mirror. Merge its confirmed Present
-      // records AFTER the remote read as well, so a stale/empty remote attendance
-      // row cannot wipe attendance that was already marked on this device.
+      // Re-apply the device mirror AFTER remote reads too. A stale/empty remote row
+      // must never wipe attendance that was already marked on this device.
       const staffMirrorChanged = mergeStaffAttendanceMirror();
       if (staffMirrorChanged) {
         const staffValue = JSON.stringify(STATE.attTeachers);
@@ -963,6 +967,16 @@
     });
     if (addedDefault && (!SUPABASE_READY || remoteKnown.directory !== false)) changed.push(['directory','directory']);
 
+    // Final attendance merge after directory hydration ensures name-based mirror
+    // records are mapped to the current stable teacher IDs.
+    const staffMirrorAfterDirectory = mergeStaffAttendanceMirror();
+    if (staffMirrorAfterDirectory) {
+      const staffValue = JSON.stringify(STATE.attTeachers);
+      cacheSet('attendance-teachers', staffValue);
+      try { await save('attTeachers', 'attendance-teachers', { valueOverride: staffValue }); }
+      catch(e) { console.warn('[Staff Attendance] directory merge save skipped:', e); }
+    }
+
     // Persist any safe local defaults/repairs. save() queues first, so even a late
     // connection failure cannot lose the change.
     const uniqueChanged = [];
@@ -1013,8 +1027,19 @@
 
   function readStaffAttendanceMirror(){
     try {
-      const raw = localStorage.getItem(STAFF_ATT_LOCAL_KEY);
+      let raw = localStorage.getItem(STAFF_ATT_LOCAL_KEY);
+      if (!raw) {
+        for (const key of STAFF_ATT_LEGACY_KEYS) {
+          raw = localStorage.getItem(key);
+          if (raw) break;
+        }
+      }
       const value = raw ? JSON.parse(raw) : {};
+      if (value && typeof value === 'object' && !Array.isArray(value) && value.version === 2 && value.records && typeof value.records === 'object') {
+        return value.records;
+      }
+      // Legacy mirror was date -> teacherId -> 'P'. Keep it readable so old
+      // attendance can be migrated to the teacher-name based mirror.
       return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
     } catch(e) {
       console.warn('Staff attendance mirror read failed', e);
@@ -1024,10 +1049,38 @@
 
   function writeStaffAttendanceMirror(value){
     try {
-      localStorage.setItem(STAFF_ATT_LOCAL_KEY, JSON.stringify(value || {}));
+      const records = {};
+      const teachers = Array.isArray(STATE.directory?.teachers) ? STATE.directory.teachers : [];
+      for (const [date, rec] of Object.entries(value || {})) {
+        if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue;
+        const out = {};
+        for (const [teacherId, status] of Object.entries(rec)) {
+          if (status !== 'P') continue;
+          const teacher = teachers.find(t => t.id === teacherId);
+          const key = teacher ? teacher.name : '__id__:' + teacherId;
+          out[key] = 'P';
+        }
+        if (Object.keys(out).length) records[date] = out;
+      }
+      localStorage.setItem(STAFF_ATT_LOCAL_KEY, JSON.stringify({version:2, records}));
       return true;
     } catch(e) {
       console.warn('Staff attendance mirror write failed', e);
+      return false;
+    }
+  }
+
+  function setStaffAttendanceMirrorStatus(date, teacherName, status){
+    try {
+      const records = readStaffAttendanceMirror();
+      if (!records[date] || typeof records[date] !== 'object' || Array.isArray(records[date])) records[date] = {};
+      if (status === 'P') records[date][teacherName] = 'P';
+      else delete records[date][teacherName];
+      if (!Object.keys(records[date]).length) delete records[date];
+      localStorage.setItem(STAFF_ATT_LOCAL_KEY, JSON.stringify({version:2, records}));
+      return true;
+    } catch(e) {
+      console.warn('Staff attendance mirror status write failed', e);
       return false;
     }
   }
@@ -1036,20 +1089,32 @@
     const mirror = readStaffAttendanceMirror();
     if (!mirror || !Object.keys(mirror).length) return false;
     if (!STATE.attTeachers || typeof STATE.attTeachers !== 'object' || Array.isArray(STATE.attTeachers)) STATE.attTeachers = {};
+    const teachers = Array.isArray(STATE.directory?.teachers) ? STATE.directory.teachers : [];
     let changed = false;
     for (const [date, rec] of Object.entries(mirror)) {
       if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue;
       if (!STATE.attTeachers[date] || typeof STATE.attTeachers[date] !== 'object') STATE.attTeachers[date] = {};
-      for (const [teacherId, status] of Object.entries(rec)) {
-        if (status !== 'P') continue;
-        if (STATE.attTeachers[date][teacherId] !== 'P') {
-          STATE.attTeachers[date][teacherId] = 'P';
+      for (const [mirrorKey, status] of Object.entries(rec)) {
+        let teacher = null;
+        if (mirrorKey.startsWith('__id__:')) {
+          const id = mirrorKey.slice(8);
+          teacher = teachers.find(t => t.id === id) || {id};
+        } else {
+          teacher = teachers.find(t => String(t.name).trim().toLowerCase() === String(mirrorKey).trim().toLowerCase());
+        }
+        if (!teacher) continue;
+        if (status === 'P' && STATE.attTeachers[date][teacher.id] !== 'P') {
+          STATE.attTeachers[date][teacher.id] = 'P';
+          changed = true;
+        } else if (status === 'N' && Object.prototype.hasOwnProperty.call(STATE.attTeachers[date], teacher.id)) {
+          delete STATE.attTeachers[date][teacher.id];
           changed = true;
         }
       }
     }
     return changed;
   }
+
 
   function escapeHtml(s){
     return (s||'').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -2325,8 +2390,13 @@
       if (STATE.attTeachers[date][ME.id] === 'P') delete STATE.attTeachers[date][ME.id];
       else STATE.attTeachers[date][ME.id] = 'P';
 
-      // Write the attendance mirror first, then use the normal cache/queue/Supabase path.
+      // Persist a teacher-name keyed mirror synchronously first. This survives
+      // refresh even if the remote write is delayed or unavailable.
+      setStaffAttendanceMirrorStatus(date, ME.name, STATE.attTeachers[date][ME.id] === 'P' ? 'P' : 'N');
       writeStaffAttendanceMirror(STATE.attTeachers);
+      // Re-apply the explicit current status because writeStaffAttendanceMirror()
+      // intentionally serializes only Present records for backward compatibility.
+      setStaffAttendanceMirrorStatus(date, ME.name, STATE.attTeachers[date][ME.id] === 'P' ? 'P' : 'N');
       cacheSet('attendance-teachers', JSON.stringify(STATE.attTeachers));
       await save('attTeachers','attendance-teachers');
       renderStaffAttendance(c);
