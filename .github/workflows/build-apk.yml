@@ -91,29 +91,72 @@ jobs:
                   settings.setDomStorageEnabled(true);
                   settings.setDatabaseEnabled(true);
 
+                  /*
+                   * FORCE DESKTOP/WIDE WEBSITE LAYOUT
+                   */
                   settings.setUseWideViewPort(true);
                   settings.setLoadWithOverviewMode(true);
 
+                  /*
+                   * Desktop Chrome user agent
+                   */
                   settings.setUserAgentString(
-                          "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                          + "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                          "Mozilla/5.0 (X11; Linux x86_64) "
+                          + "AppleWebKit/537.36 (KHTML, like Gecko) "
+                          + "Chrome/131.0.0.0 Safari/537.36"
                   );
 
+                  /*
+                   * Zoom support
+                   */
                   settings.setSupportZoom(true);
                   settings.setBuiltInZoomControls(true);
                   settings.setDisplayZoomControls(false);
+
+                  settings.setMinimumFontSize(1);
+                  settings.setMinimumLogicalFontSize(1);
                   settings.setTextZoom(100);
 
-                  settings.setMediaPlaybackRequiresUserGesture(false);
-                  settings.setAllowFileAccess(false);
-                  settings.setAllowContentAccess(false);
-
                   CookieManager.getInstance().setAcceptCookie(true);
-                  CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+                  CookieManager.getInstance()
+                          .setAcceptThirdPartyCookies(webView, true);
 
-                  webView.setOverScrollMode(View.OVER_SCROLL_IF_CONTENT_SCROLLS);
+                  webView.setOverScrollMode(
+                          View.OVER_SCROLL_IF_CONTENT_SCROLLS
+                  );
+
                   webView.setWebChromeClient(new WebChromeClient());
-                  webView.setWebViewClient(new WebViewClient());
+
+                  webView.setWebViewClient(new WebViewClient() {
+
+                      @Override
+                      public void onPageFinished(
+                              WebView view,
+                              String url
+                      ) {
+                          super.onPageFinished(view, url);
+
+                          /*
+                           * Replace the phone-width viewport with a
+                           * fixed desktop-width viewport.
+                           */
+                          String js =
+                                  "(function() {" +
+                                  "var v=document.querySelector('meta[name=\"viewport\"]');" +
+                                  "if(!v) {" +
+                                  "v=document.createElement('meta');" +
+                                  "v.name='viewport';" +
+                                  "document.head.appendChild(v);" +
+                                  "}" +
+                                  "v.content='width=1200, initial-scale=1.0, " +
+                                  "minimum-scale=0.25, maximum-scale=3.0, " +
+                                  "user-scalable=yes';" +
+                                  "document.documentElement.style.minWidth='1200px';" +
+                                  "})();";
+
+                          view.evaluateJavascript(js, null);
+                      }
+                  });
 
                   webView.loadUrl(APP_URL);
               }
@@ -133,6 +176,7 @@ jobs:
                       webView.stopLoading();
                       webView.destroy();
                   }
+
                   super.onDestroy();
               }
           }
