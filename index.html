@@ -609,8 +609,8 @@
   // ================= SUPABASE CONFIG =================
   // Use the browser-safe publishable/anon key only. NEVER put a service_role key here.
   // Replace these two values with your Supabase project's values.
-  const SUPABASE_URL = window.AR_EDUPOINT_SUPABASE_URL || 'https://cmvhjrlydmvyfhsancit.supabase.co';
-  const SUPABASE_KEY = window.AR_EDUPOINT_SUPABASE_KEY || 'sb_publishable_SsOLieR8Wiy-nH9L2vq1OA_zetGVghR2';
+  const SUPABASE_URL = 'https://cmvhjrlydmvyfhsancit.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_SsOLieR8Wiy-nH9L2vq1OA_zetGVghR';
   const SUPABASE_TABLE = 'ar_edupoint_state';
   const SUPABASE_MAX_RETRIES = 2;
   const SUPABASE_RETRY_BASE_MS = 350;
@@ -639,7 +639,14 @@
   const uid = () => (crypto && crypto.randomUUID) ? crypto.randomUUID() : (Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10));
 
   function supabaseConfigured(){
-    return !!(SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('YOUR_SUPABASE') && !SUPABASE_KEY.includes('YOUR_SUPABASE'));
+    const keyShapeOk = /^sb_publishable_[A-Za-z0-9_-]{22}_[A-Za-z0-9_-]{8}$/.test(SUPABASE_KEY || '');
+    return !!(
+      SUPABASE_URL &&
+      SUPABASE_KEY &&
+      !SUPABASE_URL.includes('YOUR_SUPABASE') &&
+      !SUPABASE_KEY.includes('YOUR_SUPABASE') &&
+      keyShapeOk
+    );
   }
 
   async function initSupabase(){
@@ -648,7 +655,7 @@
     // actual REST endpoint is reachable. The real read/write requests are the
     // authoritative connection test.
     try {
-      if (!supabaseConfigured()) throw new Error('Supabase URL/key is not configured.');
+      if (!supabaseConfigured()) throw new Error('Supabase URL or publishable API key is invalid or not configured.');
       SUPABASE = { rest: true };
       SUPABASE_READY = true;
       SUPABASE_CONNECTED = false;
