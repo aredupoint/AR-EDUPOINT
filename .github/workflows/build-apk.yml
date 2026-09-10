@@ -24,7 +24,7 @@ jobs:
           mkdir android-build
           unzip -q AR-EDUPOINT-WebView-FIXED.zip -d android-build
 
-      - name: Fix Android build configuration
+      - name: Fix Android project
         working-directory: android-build
         run: |
           cat > app/build.gradle <<'EOF'
@@ -46,6 +46,17 @@ jobs:
           }
           EOF
 
+          cat > app/src/main/res/values/styles.xml <<'EOF'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+                  <item name="android:fontFamily">sans</item>
+                  <item name="android:windowNoTitle">true</item>
+                  <item name="android:colorAccent">#1976D2</item>
+              </style>
+          </resources>
+          EOF
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -60,7 +71,8 @@ jobs:
 
       - name: Build APK
         working-directory: android-build
-        run: gradle :app:assembleDebug --stacktrace
+        run: |
+          gradle :app:assembleDebug --stacktrace
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
