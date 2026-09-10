@@ -625,6 +625,7 @@
   const STAFF_ATT_LEGACY_KEYS = ['ar-edupoint-staff-attendance:v1'];
   let SUPABASE = null;
   let SUPABASE_READY = false;
+  let SUPABASE_CONNECTED = false;
   let SUPABASE_LAST_ERROR = '';
   let SUPABASE_SYNCING = false;
   let SUPABASE_POLL_TIMER = null;
@@ -642,24 +643,44 @@
   }
 
   async function initSupabase(){
+    // Do not gate the whole cloud transport on a separate health-check request.
+    // Some Android WebViews/networks can delay or reject the probe even though the
+    // actual REST endpoint is reachable. The real read/write requests are the
+    // authoritative connection test.
     try {
       if (!supabaseConfigured()) throw new Error('Supabase URL/key is not configured.');
       SUPABASE = { rest: true };
-      const healthUrl = supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE) + '?select=storage_key&limit=1');
-      const response = await withTimeout(fetch(healthUrl, { method:'GET', headers:supabaseRestHeaders() }), SUPABASE_LOAD_TIMEOUT_MS);
-      if (!response.ok) {
-        let detail=''; try { detail=await response.text(); } catch(e) {}
-        throw new Error('Supabase HTTP '+response.status+(detail?': '+detail:''));
-      }
-      SUPABASE_READY=true;
-      SUPABASE_LAST_ERROR='';
-      SUPABASE_LAST_SUCCESS_AT=Date.now();
+      SUPABASE_READY = true;
+      SUPABASE_CONNECTED = false;
+      SUPABASE_LAST_ERROR = '';
+
+      // Probe in the background. A failed probe does NOT disable the transport;
+      // actual reads/writes below will produce the precise error if there is one.
+      Promise.resolve().then(async () => {
+        try {
+          const healthUrl = supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE) + '?select=storage_key&limit=1');
+          const response = await withTimeout(fetch(healthUrl, { method:'GET', headers:supabaseRestHeaders() }), 8000);
+          if (!response.ok) {
+            let detail=''; try { detail=await response.text(); } catch(e) {}
+            throw new Error('Supabase HTTP '+response.status+(detail?': '+detail:''));
+          }
+          SUPABASE_CONNECTED = true;
+          SUPABASE_LAST_ERROR = '';
+          SUPABASE_LAST_SUCCESS_AT = Date.now();
+          updateSyncIndicator();
+        } catch(e) {
+          SUPABASE_LAST_ERROR = e?.message || String(e);
+          console.warn('[Supabase] background connection probe failed; real requests will continue:', e);
+          updateSyncIndicator();
+        }
+      });
       return true;
     } catch(e) {
       SUPABASE_READY=false;
+      SUPABASE_CONNECTED=false;
       SUPABASE=null;
       SUPABASE_LAST_ERROR=e?.message || String(e);
-      console.error('[Supabase] initialization/health check failed:',e);
+      console.error('[Supabase] configuration failed:',e);
       return false;
     }
   }
@@ -728,6 +749,7 @@
         const url=supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE)+'?on_conflict=storage_key');
         const response=await withTimeout(fetch(url,{method:'POST',headers:supabaseRestHeaders({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal','Content-Profile':'public'}),body:JSON.stringify([{storage_key:storageKey,state:JSON.parse(value),updated_at:new Date().toISOString()}])}),SUPABASE_LOAD_TIMEOUT_MS);
         if(!response.ok){let detail='';try{detail=await response.text();}catch(e){}throw new Error('Supabase HTTP '+response.status+(detail?': '+detail:''));}
+        SUPABASE_CONNECTED = true;
         const verify=await supabaseGet(storageKey);
         if(stableJson(JSON.parse(verify||'null'))!==stableJson(JSON.parse(value))) throw new Error('Supabase write verification failed for '+storageKey);
         return true;
@@ -744,6 +766,7 @@
         const response=await withTimeout(fetch(supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE)+'?storage_key=eq.'+encodeURIComponent(storageKey)+'&select=state'),{headers:supabaseRestHeaders({'Accept-Profile':'public'})}),SUPABASE_LOAD_TIMEOUT_MS);
         if(!response.ok){let detail='';try{detail=await response.text();}catch(e){}throw new Error('Supabase HTTP '+response.status+(detail?': '+detail:''));}
         const rows=await response.json();
+        SUPABASE_CONNECTED = true;
         return Array.isArray(rows)&&rows.length?JSON.stringify(rows[0].state):null;
       }catch(e){lastErr=e;if(attempt<SUPABASE_MAX_RETRIES-1)await sleep(SUPABASE_RETRY_BASE_MS*Math.pow(2,attempt));}
     }
@@ -753,9 +776,10 @@
   function syncStatusText(){
     if (!SUPABASE_READY) return 'Cloud sync unavailable';
     if (SUPABASE_SYNCING || SUPABASE_POLL_IN_FLIGHT) return 'Syncing…';
+    if (SUPABASE_LAST_ERROR && !SUPABASE_CONNECTED && !SUPABASE_LAST_SUCCESS_AT) return 'Cloud sync issue';
     if (SUPABASE_LAST_ERROR) return 'Cloud sync issue';
-    if (SUPABASE_LAST_SUCCESS_AT) return 'Cloud synced';
-    return 'Cloud sync ready';
+    if (SUPABASE_CONNECTED || SUPABASE_LAST_SUCCESS_AT) return 'Cloud synced';
+    return 'Cloud connecting…';
   }
 
   function updateSyncIndicator(){
@@ -786,6 +810,7 @@
           cacheSet(item.storage_key, item.state);
           removeQueuedItem(item.storage_key, item.token);
           SUPABASE_LAST_SUCCESS_AT = Date.now();
+          SUPABASE_CONNECTED = true;
           SUPABASE_LAST_ERROR = '';
         } catch(e){
           allOk = false;
@@ -828,6 +853,7 @@
           }
           cacheSet(storageKey, remote);
           SUPABASE_LAST_SUCCESS_AT = Date.now();
+          SUPABASE_CONNECTED = true;
         } catch(e){
           SUPABASE_LAST_ERROR = e?.message || String(e);
           console.warn('[Supabase] background sync failed:', storageKey, e);
