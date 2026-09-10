@@ -641,41 +641,25 @@
     return !!(SUPABASE_URL && SUPABASE_KEY && !SUPABASE_URL.includes('YOUR_SUPABASE') && !SUPABASE_KEY.includes('YOUR_SUPABASE'));
   }
 
-  let SUPABASE_LIBRARY_PROMISE = null;
-  function loadSupabaseLibrary(){
-    if (window.supabase && typeof window.supabase.createClient === 'function') return Promise.resolve(true);
-    if (SUPABASE_LIBRARY_PROMISE) return SUPABASE_LIBRARY_PROMISE;
-    SUPABASE_LIBRARY_PROMISE = new Promise(resolve => {
-      const script = document.createElement('script');
-      script.src = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2';
-      script.async = true;
-      let done = false;
-      const finish = ok => { if (done) return; done = true; resolve(ok); };
-      script.onload = () => finish(!!(window.supabase && typeof window.supabase.createClient === 'function'));
-      script.onerror = () => finish(false);
-      document.head.appendChild(script);
-      setTimeout(() => finish(false), SUPABASE_LOAD_TIMEOUT_MS);
-    });
-    return SUPABASE_LIBRARY_PROMISE;
-  }
-
   async function initSupabase(){
     try {
       if (!supabaseConfigured()) throw new Error('Supabase URL/key is not configured.');
-      const sdkLoaded = await loadSupabaseLibrary();
-      if (!sdkLoaded) throw new Error('Supabase JS library could not load.');
-      SUPABASE = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {
-        auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false },
-        global: { headers: { 'x-client-info': 'ar-edupoint-html' } }
-      });
-      SUPABASE_READY = true;
-      SUPABASE_LAST_ERROR = '';
+      SUPABASE = { rest: true };
+      const healthUrl = supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE) + '?select=storage_key&limit=1');
+      const response = await withTimeout(fetch(healthUrl, { method:'GET', headers:supabaseRestHeaders() }), SUPABASE_LOAD_TIMEOUT_MS);
+      if (!response.ok) {
+        let detail=''; try { detail=await response.text(); } catch(e) {}
+        throw new Error('Supabase HTTP '+response.status+(detail?': '+detail:''));
+      }
+      SUPABASE_READY=true;
+      SUPABASE_LAST_ERROR='';
+      SUPABASE_LAST_SUCCESS_AT=Date.now();
       return true;
-    } catch (e) {
-      SUPABASE_READY = false;
-      SUPABASE = null;
-      SUPABASE_LAST_ERROR = e?.message || String(e);
-      console.error('[Supabase] initialization failed:', e);
+    } catch(e) {
+      SUPABASE_READY=false;
+      SUPABASE=null;
+      SUPABASE_LAST_ERROR=e?.message || String(e);
+      console.error('[Supabase] initialization/health check failed:',e);
       return false;
     }
   }
@@ -736,52 +720,34 @@
     return '{' + Object.keys(value).sort().map(k => JSON.stringify(k) + ':' + stableJson(value[k])).join(',') + '}';
   }
 
-  async function supabaseUpsert(storageKey, value){
-    if (!SUPABASE_READY) throw new Error('Supabase is not configured or unavailable.');
-    let lastErr = null;
-    for(let attempt=0; attempt<SUPABASE_MAX_RETRIES; attempt++){
-      try {
-        if (SUPABASE && typeof SUPABASE.from === 'function') {
-          const payload = { storage_key: storageKey, state: JSON.parse(value), updated_at: new Date().toISOString() };
-          const { error } = await SUPABASE.from(SUPABASE_TABLE).upsert(payload, { onConflict: 'storage_key' });
-          if (error) throw new Error(error.message || String(error));
-          const { data, error: verifyError } = await SUPABASE.from(SUPABASE_TABLE).select('state').eq('storage_key', storageKey).maybeSingle();
-          if (verifyError) throw new Error('Supabase verification: ' + (verifyError.message || String(verifyError)));
-          if (!data || stableJson(data.state) !== stableJson(JSON.parse(value))) throw new Error('Supabase write verification failed for ' + storageKey);
-          return true;
-        }
-        const url = supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE) + '?on_conflict=storage_key');
-        const response = await fetch(url, { method:'POST', headers:supabaseRestHeaders({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal'}), body:JSON.stringify([{storage_key:storageKey,state:JSON.parse(value),updated_at:new Date().toISOString()}]) });
-        if (!response.ok) { let detail=''; try{detail=await response.text();}catch(e){} throw new Error('Supabase HTTP '+response.status+(detail?': '+detail:'')); }
+  async function supabaseUpsert(storageKey,value){
+    if(!SUPABASE_READY) throw new Error('Supabase is not ready.');
+    let lastErr=null;
+    for(let attempt=0;attempt<SUPABASE_MAX_RETRIES;attempt++){
+      try{
+        const url=supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE)+'?on_conflict=storage_key');
+        const response=await withTimeout(fetch(url,{method:'POST',headers:supabaseRestHeaders({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal','Content-Profile':'public'}),body:JSON.stringify([{storage_key:storageKey,state:JSON.parse(value),updated_at:new Date().toISOString()}])}),SUPABASE_LOAD_TIMEOUT_MS);
+        if(!response.ok){let detail='';try{detail=await response.text();}catch(e){}throw new Error('Supabase HTTP '+response.status+(detail?': '+detail:''));}
+        const verify=await supabaseGet(storageKey);
+        if(stableJson(JSON.parse(verify||'null'))!==stableJson(JSON.parse(value))) throw new Error('Supabase write verification failed for '+storageKey);
         return true;
-      } catch(e){
-        lastErr=e;
-        if(attempt<SUPABASE_MAX_RETRIES-1) await sleep(SUPABASE_RETRY_BASE_MS*Math.pow(2,attempt));
-      }
+      }catch(e){lastErr=e;if(attempt<SUPABASE_MAX_RETRIES-1)await sleep(SUPABASE_RETRY_BASE_MS*Math.pow(2,attempt));}
     }
-    throw lastErr || new Error('Supabase write failed.');
+    throw lastErr||new Error('Supabase write failed.');
   }
 
   async function supabaseGet(storageKey){
-    if (!SUPABASE_READY) return null;
-    let lastErr = null;
-    for(let attempt=0; attempt<SUPABASE_MAX_RETRIES; attempt++){
-      try {
-        if (SUPABASE && typeof SUPABASE.from === 'function') {
-          const { data, error } = await SUPABASE.from(SUPABASE_TABLE).select('state').eq('storage_key', storageKey).maybeSingle();
-          if (error) throw new Error(error.message || String(error));
-          return data ? JSON.stringify(data.state) : null;
-        }
-        const response = await fetch(supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE)+'?storage_key=eq.'+encodeURIComponent(storageKey)+'&select=state'),{headers:supabaseRestHeaders()});
+    if(!SUPABASE_READY) throw new Error('Supabase is not ready.');
+    let lastErr=null;
+    for(let attempt=0;attempt<SUPABASE_MAX_RETRIES;attempt++){
+      try{
+        const response=await withTimeout(fetch(supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE)+'?storage_key=eq.'+encodeURIComponent(storageKey)+'&select=state'),{headers:supabaseRestHeaders({'Accept-Profile':'public'})}),SUPABASE_LOAD_TIMEOUT_MS);
         if(!response.ok){let detail='';try{detail=await response.text();}catch(e){}throw new Error('Supabase HTTP '+response.status+(detail?': '+detail:''));}
         const rows=await response.json();
         return Array.isArray(rows)&&rows.length?JSON.stringify(rows[0].state):null;
-      } catch(e){
-        lastErr=e;
-        if(attempt<SUPABASE_MAX_RETRIES-1) await sleep(SUPABASE_RETRY_BASE_MS*Math.pow(2,attempt));
-      }
+      }catch(e){lastErr=e;if(attempt<SUPABASE_MAX_RETRIES-1)await sleep(SUPABASE_RETRY_BASE_MS*Math.pow(2,attempt));}
     }
-    throw lastErr || new Error('Supabase read failed.');
+    throw lastErr||new Error('Supabase read failed.');
   }
 
   function syncStatusText(){
@@ -803,6 +769,7 @@
     el.textContent = syncStatusText();
     el.style.opacity = (SUPABASE_LAST_ERROR && !SUPABASE_SYNCING && !SUPABASE_POLL_IN_FLIGHT) ? '.98' : '.72';
     el.title = SUPABASE_LAST_ERROR ? ('Cloud sync error: ' + SUPABASE_LAST_ERROR) : 'Shared cloud data syncs automatically every 5 seconds while the app is open.';
+    el.onclick = () => { if (SUPABASE_LAST_ERROR) alert('Cloud sync error\n\n' + SUPABASE_LAST_ERROR); else alert('Cloud sync is working. Shared data checks every 5 seconds.'); };
   }
 
   async function flushSupabaseQueue(){
@@ -1124,8 +1091,7 @@
     try { await flushSupabaseQueue(); } catch(e) { console.warn('[Supabase] queue flush skipped:', e); }
     render();
 
-    // Direct REST transport is initialized synchronously; no CDN recovery is needed.
-    if (!libraryLoaded) console.warn('[Supabase] REST transport unavailable: check URL/key configuration.');
+    if (!libraryLoaded) console.warn('[Supabase] Cloud connection failed. Tap the sync indicator to see the exact error.');
   }
 
   async function save(stateKey, storageKey, options = {}){
