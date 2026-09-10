@@ -824,6 +824,7 @@
   let LOGIN_ROLE = null;
   let LOGIN_ERR = '';
   let WELCOME_SHOWN = false;
+  window.__loginStudent = '';
 
   async function loadStateKey(stateKey, storageKey){
     const pending = queuedValue(storageKey);
@@ -945,6 +946,33 @@
       {name:'Anshika Saini', cls:'Class XII', board:'ICSE(ISC)'}, {name:'Navdeep Kaur', cls:'Class XII', board:'ICSE(ISC)'},
       {name:'Gurleen Kaur', cls:'Class XII', board:'ICSE(ISC)'}
     ];
+    // Initial student passwords for the existing directory. These are only used
+    // when a student has no password yet; an administrator-set password is never overwritten.
+    const STUDENT_PASSWORDS = {
+      'Ipsha':'ipsha@V11',
+      'Anshul Saini':'anshulsaini@VII34',
+      'Parv':'parv@VII46',
+      'Vanshika Saini':'vanshikasaini@IX15',
+      'Anany Verma':'ananyverma@IX31',
+      'Naman Verma':'namanverma@IX44',
+      'Srishti Gautam':'srishtigautam@IX57',
+      'Tejasav Chauhan':'tejasavchauhan@X62',
+      'Arzoo Chauhan':'arzoochauhan@X70',
+      'Aditya Kumar':'adityakumar@X96',
+      'Vaishnavi Sharma':'vaishnavisharma@X19',
+      'Kashish Maheshwari':'kashishmaheshwari@X25',
+      'Riya':'riya@X49',
+      'Manpreet':'manpreet@X71',
+      'Yasar':'yasar@X86',
+      'Dev':'dev@X92',
+      'Virat':'virat@X13',
+      'Samra':'samra@XI29',
+      'Kashish':'kashish@XII64',
+      'Sanjana':'sanjana@XII76',
+      'Anshika Saini':'anshikasaini@XII81',
+      'Navdeep Kaur':'navdeepkaur@XII94',
+      'Gurleen Kaur':'gurleenkaur@XII36'
+    };
     if (!STATE.directory || typeof STATE.directory !== 'object') STATE.directory = {students:[],teachers:[]};
     if (!Array.isArray(STATE.directory.students)) STATE.directory.students=[];
     if (!Array.isArray(STATE.directory.teachers)) STATE.directory.teachers=[];
@@ -961,9 +989,15 @@
       if (!existingNames.includes(name)) { STATE.directory.teachers.push({id:uid(),name}); addedDefault=true; }
     });
     DEFAULT_STUDENTS.forEach(student => {
+      const suppliedPassword = STUDENT_PASSWORDS[student.name] || '';
       const existing = STATE.directory.students.find(s => s.name === student.name && s.cls === student.cls);
-      if (!existing) { STATE.directory.students.push({id:uid(),name:student.name,cls:student.cls,board:student.board||''}); addedDefault=true; }
-      else if (!existing.board && student.board) { existing.board=student.board; addedDefault=true; }
+      if (!existing) {
+        STATE.directory.students.push({id:uid(),name:student.name,cls:student.cls,board:student.board||'',password:suppliedPassword});
+        addedDefault=true;
+      } else {
+        if (!existing.board && student.board) { existing.board=student.board; addedDefault=true; }
+        if (!existing.password && suppliedPassword) { existing.password=suppliedPassword; addedDefault=true; }
+      }
     });
     if (addedDefault && (!SUPABASE_READY || remoteKnown.directory !== false)) changed.push(['directory','directory']);
 
@@ -1211,7 +1245,12 @@
                     ${studentOptions}
                   </select>
                 </div>
-                <button class="portal-login-btn student-login-btn" id="stu-login-btn" type="button">Continue</button>
+                <div class="field portal-field">
+                  <label>Password</label>
+                  <input id="stu-password" type="password" autocomplete="current-password" placeholder="Enter password" ${loginBoard ? '' : 'disabled'}>
+                </div>
+                <button class="portal-login-btn student-login-btn" id="stu-login-btn" type="button">Login</button>
+                ${LOGIN_ERR && LOGIN_ROLE==='student' ? `<div class="err portal-error">${escapeHtml(LOGIN_ERR)}</div>` : ''}
               </div>
             </section>
 
@@ -1256,8 +1295,23 @@
     const stuBoard = document.getElementById('stu-board');
     if (stuBoard) stuBoard.onchange = (e) => {
       window.__loginBoard = e.target.value;
+      window.__loginStudent = '';
+      LOGIN_ERR = '';
       render();
     };
+
+    const stuSelect = document.getElementById('stu-select');
+    const stuPassword = document.getElementById('stu-password');
+    if (stuSelect) {
+      stuSelect.onchange = (e) => {
+        window.__loginStudent = e.target.value;
+        LOGIN_ERR = '';
+        if (stuPassword) stuPassword.value = '';
+      };
+      if (window.__loginStudent && [...stuSelect.options].some(o => o.value === window.__loginStudent)) {
+        stuSelect.value = window.__loginStudent;
+      }
+    }
 
     const tchSelect = document.getElementById('tch-select');
     const pinInput = document.getElementById('pin-input');
@@ -1281,11 +1335,36 @@
 
     const stuBtn = document.getElementById('stu-login-btn');
     if (stuBtn) stuBtn.onclick = async () => {
-      const sel = document.getElementById('stu-select').value;
-      if (sel) {
-        const s = STATE.directory.students.find(x=>x.id===sel);
-        ME = {role:'student', id:s.id, name:s.name, cls:s.cls, board:s.board||''};
-      } else { return; }
+      const sel = document.getElementById('stu-select')?.value || '';
+      const enteredPassword = document.getElementById('stu-password')?.value || '';
+      if (!sel) {
+        LOGIN_ERR = 'Select your name.';
+        render(); return;
+      }
+      if (!enteredPassword) {
+        LOGIN_ERR = 'Enter your password.';
+        render(); return;
+      }
+      const s = STATE.directory.students.find(x=>x.id===sel);
+      if (!s) {
+        LOGIN_ERR = 'Student not found.';
+        render(); return;
+      }
+      // The Admin PIN is a master override for student login.
+      const isAdminOverride = enteredPassword === STATE.settings.adminPin;
+      if (!isAdminOverride) {
+        if (!s.password) {
+          LOGIN_ERR = 'Password is not set. Please contact the administrator.';
+          render(); return;
+        }
+        if (enteredPassword !== s.password) {
+          LOGIN_ERR = 'Incorrect password.';
+          render(); return;
+        }
+      }
+      LOGIN_ERR = '';
+      ME = {role:'student', id:s.id, name:s.name, cls:s.cls, board:s.board||''};
+      window.__loginStudent = '';
       await saveMe();
       TAB = null;
       render();
@@ -1321,7 +1400,7 @@
   }
 
   function logout(){
-    ME = null; LOGIN_ROLE = null; LOGIN_ERR=''; window.__loginBoard=''; WELCOME_SHOWN = true;
+    ME = null; LOGIN_ROLE = null; LOGIN_ERR=''; window.__loginBoard=''; window.__loginStudent=''; WELCOME_SHOWN = true;
     saveMe();
     render();
   }
@@ -2417,6 +2496,7 @@
 
   // ---------- MANAGE (teachers only) ----------
   let MANAGE_SECTION = null;
+  let STUDENT_MANAGE_TAB = 'students';
   function renderManage(c){
     // Manage opens as three folders. Details are shown only after opening a folder.
     if (!MANAGE_SECTION) {
@@ -2438,17 +2518,104 @@
 
     const back = `<button class="btn-secondary icon-back" id="manage-back" type="button" aria-label="Back" title="Back"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 12H5M11 6l-6 6 6 6"></path></svg></button>`;
     if (MANAGE_SECTION === 'students') {
-      c.innerHTML = back + `
-        <div class="card"><h3>Student</h3>
-          <div class="att-grid">${STATE.directory.students.map(s => `<div class="att-row"><div>${escapeHtml(s.name)} <span class="meta">${escapeHtml(s.cls||'')} ${s.board ? '&middot; '+escapeHtml(s.board) : ''}</span></div><button class="btn-danger" data-del-stu="${s.id}">Remove</button></div>`).join('') || '<div class="empty">No students yet.</div>'}</div>
-          <div class="field" style="margin-top:14px"><label>Add student &mdash; name</label><input id="add-stu-name"></div>
-          <div class="field"><label>Board</label><select id="add-stu-board">${BOARDS.map(b => `<option value="${b}">${b}</option>`).join('')}</select></div>
-          <div class="field"><label>Class</label><select id="add-stu-cls">${CLASS_OPTIONS.map(cls => `<option value="${cls}">${cls}</option>`).join('')}</select></div>
-          <button class="btn-secondary" id="add-stu-btn">Add student</button>
+      const studentTabButtons = `
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+          <button type="button" class="${STUDENT_MANAGE_TAB==='students'?'btn-primary':'btn-secondary'}" id="student-tab-list">Students</button>
+          <button type="button" class="${STUDENT_MANAGE_TAB==='passwords'?'btn-primary':'btn-secondary'}" id="student-tab-passwords">Student Passwords</button>
         </div>`;
+
+      if (STUDENT_MANAGE_TAB === 'passwords') {
+        c.innerHTML = back + `
+          <div class="card">
+            <h3>Student Passwords</h3>
+            ${studentTabButtons}
+            <div class="att-grid">
+              ${STATE.directory.students
+                .slice()
+                .sort((a,b)=>a.name.localeCompare(b.name))
+                .map(s => `
+                  <div class="att-row" style="align-items:center;gap:10px;flex-wrap:wrap">
+                    <div style="flex:1;min-width:170px">
+                      <div>${escapeHtml(s.name)}</div>
+                      <span class="meta">${escapeHtml(s.cls||'')} ${s.board ? '&middot; '+escapeHtml(s.board) : ''}</span>
+                    </div>
+                    <div class="field" style="margin:0;min-width:190px;flex:1">
+                      <label style="font-size:11px">Password</label>
+                      <input type="text" data-student-password="${s.id}" value="${escapeHtml(s.password||'')}" placeholder="Set password">
+                    </div>
+                    <button class="btn-secondary student-password-save" data-save-student-password="${s.id}" type="button">Save</button>
+                  </div>
+                `).join('') || '<div class="empty">No students yet.</div>'}
+            </div>
+          </div>`;
+      } else {
+        c.innerHTML = back + `
+          <div class="card">
+            <h3>Student</h3>
+            ${studentTabButtons}
+            <div class="att-grid">
+              ${STATE.directory.students.map(s => `
+                <div class="att-row">
+                  <div>
+                    ${escapeHtml(s.name)}
+                    <span class="meta">${escapeHtml(s.cls||'')} ${s.board ? '&middot; '+escapeHtml(s.board) : ''}</span>
+                  </div>
+                  <button class="btn-danger" data-del-stu="${s.id}" type="button">Remove</button>
+                </div>
+              `).join('') || '<div class="empty">No students yet.</div>'}
+            </div>
+            <div class="field" style="margin-top:14px"><label>Add student &mdash; name</label><input id="add-stu-name" placeholder="Enter student name"></div>
+            <div class="field"><label>Board</label><select id="add-stu-board">${BOARDS.map(b => `<option value="${b}">${b}</option>`).join('')}</select></div>
+            <div class="field"><label>Class</label><select id="add-stu-cls">${CLASS_OPTIONS.map(cls => `<option value="${cls}">${cls}</option>`).join('')}</select></div>
+            <div class="field"><label>Password</label><input id="add-stu-password" type="text" autocomplete="new-password" placeholder="Create student password"></div>
+            <button class="btn-secondary" id="add-stu-btn" type="button">Add student</button>
+          </div>`;
+      }
+
       document.getElementById('manage-back').onclick=()=>{MANAGE_SECTION=null;TAB='manage';render();};
-      document.getElementById('add-stu-btn').onclick=async()=>{const name=document.getElementById('add-stu-name').value.trim(),cls=document.getElementById('add-stu-cls').value,board=document.getElementById('add-stu-board').value;if(!name)return;STATE.directory.students.push({id:uid(),name,cls,board});await save('directory','directory');renderManage(c)};
-      STATE.directory.students.forEach(s=>{const b=c.querySelector(`[data-del-stu="${s.id}"]`);if(b)b.onclick=async()=>{STATE.directory.students=STATE.directory.students.filter(x=>x.id!==s.id);await save('directory','directory');renderManage(c)}});
+
+      const listTab = document.getElementById('student-tab-list');
+      const passwordsTab = document.getElementById('student-tab-passwords');
+      if (listTab) listTab.onclick=()=>{STUDENT_MANAGE_TAB='students';renderManage(c);};
+      if (passwordsTab) passwordsTab.onclick=()=>{STUDENT_MANAGE_TAB='passwords';renderManage(c);};
+
+      if (STUDENT_MANAGE_TAB === 'students') {
+        document.getElementById('add-stu-btn').onclick=async()=>{
+          const name=document.getElementById('add-stu-name').value.trim();
+          const cls=document.getElementById('add-stu-cls').value;
+          const board=document.getElementById('add-stu-board').value;
+          const password=document.getElementById('add-stu-password').value.trim();
+          if(!name) { alert('Enter student name.'); return; }
+          if(!password) { alert('Create a password for this student.'); return; }
+          const exists=STATE.directory.students.some(s=>s.name.toLowerCase()===name.toLowerCase() && s.cls===cls);
+          if(exists) { alert('A student with this name and class already exists.'); return; }
+          STATE.directory.students.push({id:uid(),name,cls,board,password});
+          await save('directory','directory');
+          renderManage(c);
+        };
+        STATE.directory.students.forEach(s=>{
+          const b=c.querySelector(`[data-del-stu="${s.id}"]`);
+          if(b)b.onclick=async()=>{
+            STATE.directory.students=STATE.directory.students.filter(x=>x.id!==s.id);
+            await save('directory','directory');
+            renderManage(c);
+          };
+        });
+      } else {
+        c.querySelectorAll('.student-password-save').forEach(btn=>{
+          btn.onclick=async()=>{
+            const id=btn.dataset.saveStudentPassword;
+            const student=STATE.directory.students.find(s=>s.id===id);
+            const input=c.querySelector(`[data-student-password="${id}"]`);
+            if(!student || !input) return;
+            const password=input.value.trim();
+            if(!password) { alert('Password cannot be empty.'); return; }
+            student.password=password;
+            await save('directory','directory');
+            renderManage(c);
+          };
+        });
+      }
     } else if (MANAGE_SECTION === 'teachers') {
       c.innerHTML = back + `
         <div class="card"><h3>Teacher</h3>
