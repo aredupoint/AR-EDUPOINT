@@ -615,6 +615,8 @@
   const SUPABASE_MAX_RETRIES = 2;
   const SUPABASE_RETRY_BASE_MS = 350;
   const SUPABASE_LOAD_TIMEOUT_MS = 3500;
+  const SUPABASE_REALTIME_POLL_MS = 5000;
+  const SUPABASE_BACKGROUND_TIMEOUT_MS = 4500;
   const LOCAL_CACHE_PREFIX = 'ar-edupoint-cache:';
   const LOCAL_QUEUE_KEY = 'ar-edupoint-sync-queue:v1';
   // Dedicated durable mirror for staff attendance. This prevents attendance from disappearing
@@ -625,6 +627,9 @@
   let SUPABASE_READY = false;
   let SUPABASE_LAST_ERROR = '';
   let SUPABASE_SYNCING = false;
+  let SUPABASE_POLL_TIMER = null;
+  let SUPABASE_POLL_IN_FLIGHT = false;
+  let SUPABASE_LAST_SUCCESS_AT = 0;
   let SUPABASE_QUEUE = [];
   const SAVE_CHAINS = new Map();
 
@@ -779,30 +784,121 @@
     throw lastErr || new Error('Supabase read failed.');
   }
 
+  function syncStatusText(){
+    if (!SUPABASE_READY) return 'Cloud sync unavailable';
+    if (SUPABASE_SYNCING || SUPABASE_POLL_IN_FLIGHT) return 'Syncing…';
+    if (SUPABASE_LAST_ERROR) return 'Cloud sync issue';
+    if (SUPABASE_LAST_SUCCESS_AT) return 'Cloud synced';
+    return 'Cloud sync ready';
+  }
+
+  function updateSyncIndicator(){
+    let el = document.getElementById('ar-edupoint-sync-status');
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'ar-edupoint-sync-status';
+      el.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:2147483646;padding:7px 11px;border-radius:999px;font:600 11px/1.2 Arial,sans-serif;background:rgba(15,23,42,.92);color:#fff;box-shadow:0 3px 14px rgba(0,0,0,.22);pointer-events:none;opacity:.86;transition:opacity .2s;';
+      document.body.appendChild(el);
+    }
+    el.textContent = syncStatusText();
+    el.style.opacity = (SUPABASE_LAST_ERROR && !SUPABASE_SYNCING && !SUPABASE_POLL_IN_FLIGHT) ? '.98' : '.72';
+    el.title = SUPABASE_LAST_ERROR ? ('Cloud sync error: ' + SUPABASE_LAST_ERROR) : 'Shared cloud data syncs automatically every 5 seconds while the app is open.';
+  }
+
   async function flushSupabaseQueue(){
-    if (!SUPABASE_READY || SUPABASE_SYNCING) return;
+    if (!SUPABASE_READY || SUPABASE_SYNCING) return false;
     const q = readQueue();
-    if (!q.length) return;
+    if (!q.length) { updateSyncIndicator(); return true; }
     SUPABASE_SYNCING = true;
+    updateSyncIndicator();
+    let allOk = true;
     try {
       for (const item of q) {
         try {
           await supabaseUpsert(item.storage_key, item.state);
           cacheSet(item.storage_key, item.state);
           removeQueuedItem(item.storage_key, item.token);
+          SUPABASE_LAST_SUCCESS_AT = Date.now();
+          SUPABASE_LAST_ERROR = '';
         } catch(e){
+          allOk = false;
           SUPABASE_LAST_ERROR = e?.message || String(e);
           console.error('[Supabase] queued save failed:', item.storage_key, e);
         }
       }
-    } finally { SUPABASE_SYNCING = false; }
+    } finally {
+      SUPABASE_SYNCING = false;
+      updateSyncIndicator();
+    }
+    return allOk;
   }
 
-  window.addEventListener('online', () => { flushSupabaseQueue().catch(console.error); });
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible') flushSupabaseQueue().catch(console.error);
+  async function syncFromCloud(options = {}){
+    if (!SUPABASE_READY || SUPABASE_POLL_IN_FLIGHT) return false;
+    // Never overwrite a local change that is still waiting to reach the cloud.
+    SUPABASE_POLL_IN_FLIGHT = true;
+    updateSyncIndicator();
+    let changed = false;
+    const keys = [
+      ['directory','directory'], ['settings','settings'], ['notices','notices'], ['homework','homework'],
+      ['results','results'], ['testReports','test-reports'], ['attStudents','attendance-students'],
+      ['attTeachers','attendance-teachers'], ['fees','fees'], ['testTracker','test-tracker'],
+      ['calendarEvents','calendar-events']
+    ];
+    try {
+      // Deliver local writes first. This is important on the admin device: a poll must
+      // never fetch an older cloud snapshot before the pending write has been delivered.
+      await flushSupabaseQueue();
+      await Promise.all(keys.map(async ([stateKey, storageKey]) => {
+        if (queuedValue(storageKey)) return;
+        try {
+          const remote = await withTimeout(supabaseGet(storageKey), SUPABASE_BACKGROUND_TIMEOUT_MS);
+          if (!remote) return;
+          const local = JSON.stringify(STATE[stateKey]);
+          if (stableJson(JSON.parse(remote)) !== stableJson(JSON.parse(local || 'null'))) {
+            STATE[stateKey] = JSON.parse(remote);
+            changed = true;
+          }
+          cacheSet(storageKey, remote);
+          SUPABASE_LAST_SUCCESS_AT = Date.now();
+        } catch(e){
+          SUPABASE_LAST_ERROR = e?.message || String(e);
+          console.warn('[Supabase] background sync failed:', storageKey, e);
+        }
+      }));
+      if (changed) render();
+      return changed;
+    } finally {
+      SUPABASE_POLL_IN_FLIGHT = false;
+      updateSyncIndicator();
+    }
+  }
+
+  function startSupabaseRealtimeSync(){
+    if (!SUPABASE_READY) return;
+    if (SUPABASE_POLL_TIMER) clearInterval(SUPABASE_POLL_TIMER);
+    // Supabase Realtime is optional; this polling layer is deliberately independent of
+    // websocket/publication configuration, so every APK gets near-real-time updates.
+    SUPABASE_POLL_TIMER = setInterval(() => {
+      if (document.visibilityState === 'visible' && navigator.onLine !== false) {
+        syncFromCloud().catch(console.error);
+      }
+    }, SUPABASE_REALTIME_POLL_MS);
+    syncFromCloud().catch(console.error);
+  }
+
+  window.addEventListener('online', () => {
+    flushSupabaseQueue().then(() => syncFromCloud()).catch(console.error);
   });
-  window.addEventListener('pageshow', () => { flushSupabaseQueue().catch(console.error); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      flushSupabaseQueue().then(() => syncFromCloud()).catch(console.error);
+    }
+  });
+  window.addEventListener('pageshow', () => {
+    flushSupabaseQueue().then(() => syncFromCloud()).catch(console.error);
+  });
+  window.addEventListener('focus', () => { syncFromCloud().catch(console.error); });
 
   let STATE = {
     directory: { students: [], teachers: [] },
@@ -880,6 +976,7 @@
 
     const remoteKnown = Object.create(null);
     const libraryLoaded = initSupabase();
+    updateSyncIndicator();
 
     // Read remote data only when there is no newer local queued change. Each key is
     // tracked independently so one failed request cannot cause defaults to overwrite
@@ -911,6 +1008,8 @@
         catch(e) { console.warn('[Staff Attendance] mirror re-save skipped:', e); }
       }
       render();
+      updateSyncIndicator();
+      startSupabaseRealtimeSync();
     }
 
     // Defaults are only persisted when the corresponding remote read is known to have
@@ -1042,11 +1141,15 @@
       try {
         await supabaseUpsert(storageKey, value);
         removeQueuedItem(storageKey, token);
+        SUPABASE_LAST_SUCCESS_AT = Date.now();
+        SUPABASE_LAST_ERROR = '';
+        updateSyncIndicator();
         return true;
       } catch(e){
         SUPABASE_LAST_ERROR = e?.message || String(e);
         console.error('[Supabase] save failed:', storageKey, e);
-        // Keep the queued item; online/reload retry will deliver it.
+        updateSyncIndicator();
+        // Keep the queued item; online/reload/realtime polling retry will deliver it.
         return false;
       }
     });
