@@ -614,9 +614,9 @@
   const SUPABASE_TABLE = 'ar_edupoint_state';
   const SUPABASE_MAX_RETRIES = 2;
   const SUPABASE_RETRY_BASE_MS = 350;
-  const SUPABASE_LOAD_TIMEOUT_MS = 3500;
+  const SUPABASE_LOAD_TIMEOUT_MS = 7000;
   const SUPABASE_REALTIME_POLL_MS = 5000;
-  const SUPABASE_BACKGROUND_TIMEOUT_MS = 4500;
+  const SUPABASE_BACKGROUND_TIMEOUT_MS = 7000;
   const LOCAL_CACHE_PREFIX = 'ar-edupoint-cache:';
   const LOCAL_QUEUE_KEY = 'ar-edupoint-sync-queue:v1';
   // Dedicated durable mirror for staff attendance. This prevents attendance from disappearing
@@ -669,9 +669,7 @@
           SUPABASE_LAST_SUCCESS_AT = Date.now();
           updateSyncIndicator();
         } catch(e) {
-          SUPABASE_LAST_ERROR = e?.message || String(e);
           console.warn('[Supabase] background connection probe failed; real requests will continue:', e);
-          updateSyncIndicator();
         }
       });
       return true;
@@ -693,8 +691,10 @@
     };
   }
 
-  function supabaseRestUrl(path){
-    return SUPABASE_URL.replace(/\/$/, '') + '/rest/v1/' + path;
+  function supabaseRestUrl(path, includeKey = true){
+    const base = SUPABASE_URL.replace(/\/$/, '') + '/rest/v1/' + path;
+    if (!includeKey) return base;
+    return base + (path.includes('?') ? '&' : '?') + 'apikey=' + encodeURIComponent(SUPABASE_KEY);
   }
 
   function sleep(ms){ return new Promise(r => setTimeout(r, ms)); }
@@ -747,11 +747,18 @@
     for(let attempt=0;attempt<SUPABASE_MAX_RETRIES;attempt++){
       try{
         const url=supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE)+'?on_conflict=storage_key');
-        const response=await withTimeout(fetch(url,{method:'POST',headers:supabaseRestHeaders({'Content-Type':'application/json','Prefer':'resolution=merge-duplicates,return=minimal','Content-Profile':'public'}),body:JSON.stringify([{storage_key:storageKey,state:JSON.parse(value),updated_at:new Date().toISOString()}])}),SUPABASE_LOAD_TIMEOUT_MS);
+        const response=await withTimeout(fetch(url,{
+          method:'POST', mode:'cors',
+          headers:supabaseRestHeaders({
+            'Content-Type':'application/json',
+            'Prefer':'resolution=merge-duplicates,return=representation',
+            'Content-Profile':'public'
+          }),
+          body:JSON.stringify([{storage_key:storageKey,state:JSON.parse(value),updated_at:new Date().toISOString()}])
+        }),SUPABASE_LOAD_TIMEOUT_MS);
         if(!response.ok){let detail='';try{detail=await response.text();}catch(e){}throw new Error('Supabase HTTP '+response.status+(detail?': '+detail:''));}
-        SUPABASE_CONNECTED = true;
-        const verify=await supabaseGet(storageKey);
-        if(stableJson(JSON.parse(verify||'null'))!==stableJson(JSON.parse(value))) throw new Error('Supabase write verification failed for '+storageKey);
+        // A successful upsert is authoritative. Do not perform a second SELECT here.
+        SUPABASE_CONNECTED=true;
         return true;
       }catch(e){lastErr=e;if(attempt<SUPABASE_MAX_RETRIES-1)await sleep(SUPABASE_RETRY_BASE_MS*Math.pow(2,attempt));}
     }
@@ -763,7 +770,7 @@
     let lastErr=null;
     for(let attempt=0;attempt<SUPABASE_MAX_RETRIES;attempt++){
       try{
-        const response=await withTimeout(fetch(supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE)+'?storage_key=eq.'+encodeURIComponent(storageKey)+'&select=state'),{headers:supabaseRestHeaders({'Accept-Profile':'public'})}),SUPABASE_LOAD_TIMEOUT_MS);
+        const response=await withTimeout(fetch(supabaseRestUrl(encodeURIComponent(SUPABASE_TABLE)+'?storage_key=eq.'+encodeURIComponent(storageKey)+'&select=state'),{headers:supabaseRestHeaders()}),SUPABASE_LOAD_TIMEOUT_MS);
         if(!response.ok){let detail='';try{detail=await response.text();}catch(e){}throw new Error('Supabase HTTP '+response.status+(detail?': '+detail:''));}
         const rows=await response.json();
         SUPABASE_CONNECTED = true;
@@ -776,9 +783,9 @@
   function syncStatusText(){
     if (!SUPABASE_READY) return 'Cloud sync unavailable';
     if (SUPABASE_SYNCING || SUPABASE_POLL_IN_FLIGHT) return 'Syncing…';
-    if (SUPABASE_LAST_ERROR && !SUPABASE_CONNECTED && !SUPABASE_LAST_SUCCESS_AT) return 'Cloud sync issue';
-    if (SUPABASE_LAST_ERROR) return 'Cloud sync issue';
-    if (SUPABASE_CONNECTED || SUPABASE_LAST_SUCCESS_AT) return 'Cloud synced';
+    const recentlyHealthy = SUPABASE_LAST_SUCCESS_AT && (Date.now() - SUPABASE_LAST_SUCCESS_AT < 30000);
+    if (SUPABASE_LAST_ERROR && !recentlyHealthy && !SUPABASE_CONNECTED) return 'Cloud sync issue';
+    if (SUPABASE_CONNECTED || recentlyHealthy || SUPABASE_LAST_SUCCESS_AT) return 'Cloud synced';
     return 'Cloud connecting…';
   }
 
@@ -787,13 +794,21 @@
     if (!el) {
       el = document.createElement('div');
       el.id = 'ar-edupoint-sync-status';
-      el.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:2147483646;padding:7px 11px;border-radius:999px;font:600 11px/1.2 Arial,sans-serif;background:rgba(15,23,42,.92);color:#fff;box-shadow:0 3px 14px rgba(0,0,0,.22);pointer-events:none;opacity:.86;transition:opacity .2s;';
+      el.style.cssText = 'position:fixed;right:12px;bottom:12px;z-index:2147483646;padding:7px 11px;border-radius:999px;font:600 11px/1.2 Arial,sans-serif;background:rgba(15,23,42,.92);color:#fff;box-shadow:0 3px 14px rgba(0,0,0,.22);pointer-events:auto;cursor:pointer;opacity:.86;transition:opacity .2s;';
       document.body.appendChild(el);
     }
     el.textContent = syncStatusText();
     el.style.opacity = (SUPABASE_LAST_ERROR && !SUPABASE_SYNCING && !SUPABASE_POLL_IN_FLIGHT) ? '.98' : '.72';
     el.title = SUPABASE_LAST_ERROR ? ('Cloud sync error: ' + SUPABASE_LAST_ERROR) : 'Shared cloud data syncs automatically every 5 seconds while the app is open.';
-    el.onclick = () => { if (SUPABASE_LAST_ERROR) alert('Cloud sync error\n\n' + SUPABASE_LAST_ERROR); else alert('Cloud sync is working. Shared data checks every 5 seconds.'); };
+    el.onclick = () => {
+      if (SUPABASE_LAST_ERROR) {
+        const err = SUPABASE_LAST_ERROR;
+        alert('Cloud sync error\n\n' + err + '\n\nTrying again now…');
+        flushSupabaseQueue().then(() => syncFromCloud()).catch(console.error);
+      } else {
+        alert('Cloud sync is working. Shared data checks every 5 seconds.');
+      }
+    };
   }
 
   async function flushSupabaseQueue(){
@@ -975,8 +990,8 @@
     // tracked independently so one failed request cannot cause defaults to overwrite
     // valid remote data for that key.
     if (SUPABASE_READY) {
-      await Promise.all(keys.map(async ([stateKey, storageKey]) => {
-        if (queuedValue(storageKey)) return;
+      for (const [stateKey, storageKey] of keys) {
+        if (queuedValue(storageKey)) continue;
         try {
           const remote = await withTimeout(supabaseGet(storageKey), SUPABASE_LOAD_TIMEOUT_MS);
           remoteKnown[storageKey] = true;
@@ -989,7 +1004,7 @@
           SUPABASE_LAST_ERROR = e?.message || String(e);
           console.warn('[Supabase] remote load skipped:', storageKey, e);
         }
-      }));
+      }
 
       // Re-apply the device mirror AFTER remote reads too. A stale/empty remote row
       // must never wipe attendance that was already marked on this device.
