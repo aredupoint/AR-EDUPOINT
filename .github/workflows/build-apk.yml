@@ -57,6 +57,61 @@ jobs:
           </resources>
           EOF
 
+          cat > app/src/main/java/com/aredupoint/app/MainActivity.java <<'EOF'
+          package com.aredupoint.app;
+
+          import android.app.Activity;
+          import android.os.Bundle;
+          import android.view.View;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          public class MainActivity extends Activity {
+
+              private WebView webView;
+
+              @Override
+              protected void onCreate(Bundle savedInstanceState) {
+                  super.onCreate(savedInstanceState);
+
+                  webView = new WebView(this);
+                  setContentView(webView);
+
+                  WebSettings settings = webView.getSettings();
+                  settings.setJavaScriptEnabled(true);
+                  settings.setDomStorageEnabled(true);
+                  settings.setSupportZoom(true);
+                  settings.setBuiltInZoomControls(true);
+                  settings.setDisplayZoomControls(false);
+                  settings.setUseWideViewPort(true);
+                  settings.setLoadWithOverviewMode(false);
+                  settings.setTextZoom(100);
+
+                  webView.setWebViewClient(new WebViewClient());
+
+                  webView.loadUrl("https://aredupoint.github.io/AR-EDUPOINT/");
+              }
+
+              @Override
+              public void onBackPressed() {
+                  if (webView != null && webView.canGoBack()) {
+                      webView.goBack();
+                  } else {
+                      super.onBackPressed();
+                  }
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (webView != null) {
+                      webView.destroy();
+                  }
+                  super.onDestroy();
+              }
+          }
+          EOF
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
