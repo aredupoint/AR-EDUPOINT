@@ -21,6 +21,7 @@ public class MyFirebaseMessagingService extends FirebaseMessagingService {
     @Override
     public void onCreate() {
         super.onCreate();
+        // Keep the channel available even when Android/FCM starts this service.
         createNotificationChannel();
     }
 

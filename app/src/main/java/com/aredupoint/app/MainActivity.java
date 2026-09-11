@@ -2,6 +2,8 @@ package com.aredupoint.app;
 
 import android.annotation.SuppressLint;
 import android.app.Activity;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
 import android.graphics.Bitmap;
 import android.os.Bundle;
 import android.Manifest;
@@ -35,6 +37,7 @@ public class MainActivity extends AppCompatActivity {
         webView = new WebView(this);
         setContentView(webView);
 
+        createNotificationChannel();
         setupPushNotifications();
 
         WebSettings settings = webView.getSettings();
@@ -98,6 +101,8 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private static final String FCM_TOPIC = "ar_edupoint_all";
+
     private void setupPushNotifications() {
         // Android 13+ requires runtime notification permission.
         if (android.os.Build.VERSION.SDK_INT >= 33 &&
@@ -105,8 +110,36 @@ public class MainActivity extends AppCompatActivity {
             requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 7001);
         }
 
-        FirebaseMessaging.getInstance().subscribeToTopic("ar_edupoint_all")
-                .addOnFailureListener(e -> android.util.Log.w("AR_EDUPOINT", "FCM topic subscription failed", e));
+        // Explicitly initialize FCM, obtain the registration token, then subscribe
+        // to the broadcast topic. This also gives us a reliable diagnostic path.
+        FirebaseMessaging messaging = FirebaseMessaging.getInstance();
+        messaging.getToken()
+                .addOnSuccessListener(token -> {
+                    android.util.Log.d("AR_EDUPOINT", "FCM token obtained: " + token);
+                    messaging.subscribeToTopic(FCM_TOPIC)
+                            .addOnSuccessListener(unused ->
+                                    android.util.Log.d("AR_EDUPOINT", "FCM topic subscribed: " + FCM_TOPIC))
+                            .addOnFailureListener(e ->
+                                    android.util.Log.e("AR_EDUPOINT", "FCM topic subscription failed", e));
+                })
+                .addOnFailureListener(e ->
+                        android.util.Log.e("AR_EDUPOINT", "FCM token retrieval failed", e));
+    }
+
+    private void createNotificationChannel() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+            NotificationManager manager = getSystemService(NotificationManager.class);
+            if (manager == null) return;
+
+            NotificationChannel channel = new NotificationChannel(
+                    MyFirebaseMessagingService.CHANNEL_ID,
+                    "AR EDUPOINT Events",
+                    NotificationManager.IMPORTANCE_HIGH
+            );
+            channel.setDescription("Notifications for new AR EDUPOINT calendar events");
+            channel.enableVibration(true);
+            manager.createNotificationChannel(channel);
+        }
     }
 
     @Override
