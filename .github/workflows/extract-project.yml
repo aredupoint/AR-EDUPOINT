@@ -20,15 +20,14 @@ jobs:
 
           if [ ! -f "$ZIP_FILE" ]; then
             echo "ERROR: $ZIP_FILE not found."
-            echo ""
-            echo "Files currently in repository:"
+            echo "Repository files:"
             ls -la
             exit 1
           fi
 
-          echo "Found ZIP: $ZIP_FILE"
+          echo "Found: $ZIP_FILE"
 
-      - name: Extract v1.2 ZIP
+      - name: Extract v1.2 project
         run: |
           rm -rf extracted_project
           mkdir extracted_project
@@ -37,24 +36,25 @@ jobs:
 
           echo "ZIP extracted successfully."
 
-      - name: Detect Gradle project root
+      - name: Find project root
         run: |
-          if [ -f "extracted_project/settings.gradle" ] || [ -f "extracted_project/settings.gradle.kts" ]; then
+          if [ -f "extracted_project/settings.gradle" ] || \
+             [ -f "extracted_project/settings.gradle.kts" ]; then
+
             echo "PROJECT_ROOT=extracted_project" >> "$GITHUB_ENV"
-            echo "Project root: extracted_project"
+
           else
+
             ROOT=$(find extracted_project -type f \
               \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
               -printf '%h\n' | head -n 1)
 
             if [ -z "$ROOT" ]; then
               echo "ERROR: Gradle project root not found."
-              find extracted_project -maxdepth 3 -type f | head -100
               exit 1
             fi
 
             echo "PROJECT_ROOT=$ROOT" >> "$GITHUB_ENV"
-            echo "Project root: $ROOT"
           fi
 
       - name: Remove old Android project
@@ -77,20 +77,19 @@ jobs:
 
       - name: Copy new FCM v1.2 project
         run: |
-          echo "Copying new FCM v1.2 project..."
+          echo "Copying new project..."
 
           # IMPORTANT:
-          # Never copy .github from the ZIP.
-          # This preserves the existing GitHub Actions workflows.
+          # Do NOT copy .github from ZIP.
+          # Existing GitHub workflows remain untouched.
+
           rsync -a --exclude='.github/' "$PROJECT_ROOT"/ ./
 
-          echo "New FCM v1.2 project copied."
+          echo "New project copied."
 
-      - name: Verify FCM v1.2
+      - name: Verify v1.2
         run: |
-          echo "======================================"
-          echo "Checking AR EDUPOINT Android version"
-          echo "======================================"
+          echo "Checking Android version..."
 
           if [ ! -f "app/build.gradle" ]; then
             echo "ERROR: app/build.gradle not found."
@@ -105,76 +104,62 @@ jobs:
 
             echo ""
             echo "======================================"
-            echo "SUCCESS: FCM v1.2 project verified."
+            echo "SUCCESS: FCM v1.2 VERIFIED"
             echo "versionCode = 3"
             echo "versionName = 1.2"
             echo "======================================"
 
           else
+
             echo ""
-            echo "ERROR: FCM v1.2 verification failed."
-            echo "Expected:"
-            echo "versionCode 3"
-            echo "versionName '1.2'"
+            echo "ERROR: v1.2 verification FAILED."
             exit 1
+
           fi
 
-      - name: Verify FCM notification channel fix
+      - name: Verify notification channel fix
         run: |
-          echo "Checking FCM notification channel configuration..."
+          echo "Checking FCM notification configuration..."
 
           if grep -q "ar_edupoint_events" \
             app/src/main/java/com/aredupoint/app/MainActivity.java; then
-
-            echo "SUCCESS: FCM notification channel fix found."
-
+            echo "FCM channel reference: OK"
           else
-            echo "WARNING: Could not verify channel reference in MainActivity."
+            echo "WARNING: FCM channel reference not found."
           fi
 
           if grep -q "default_notification_channel_id" \
             app/src/main/AndroidManifest.xml; then
-
-            echo "SUCCESS: Default notification channel metadata found."
-
+            echo "Default notification channel: OK"
           else
             echo "WARNING: Default notification channel metadata not found."
           fi
 
-      - name: Remove temporary extraction folder
+      - name: Clean temporary folder
         run: |
           rm -rf extracted_project
 
-          echo "Temporary extraction folder removed."
-          echo "ZIP file intentionally kept."
+          echo "Temporary folder removed."
+          echo "ZIP has NOT been deleted."
 
-      - name: Commit and push project
+      - name: Commit project changes
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Stage only the Android project changes.
-          # GitHub workflow files are deliberately excluded.
-          git add app/
-          git add gradle/
-          git add build.gradle
-          git add build.gradle.kts
-          git add settings.gradle
-          git add settings.gradle.kts
-          git add gradle.properties
-          git add gradlew
-          git add gradlew.bat
-          git add index.html
+          # Stage all project changes.
+          git add -A
 
-          # Ignore files that don't exist.
-          git add -u
+          # NEVER modify GitHub workflow files from this workflow.
+          git restore --staged .github/workflows 2>/dev/null || true
+          git restore .github/workflows 2>/dev/null || true
 
           if git diff --cached --quiet; then
-            echo "No project changes detected."
+            echo "No changes detected."
             exit 0
           fi
 
-          echo "Changes that will be committed:"
+          echo "Changes to be committed:"
           git diff --cached --stat
 
           git commit -m "Install AR EDUPOINT FCM v1.2 project"
