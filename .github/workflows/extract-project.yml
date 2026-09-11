@@ -2,9 +2,6 @@ name: Extract FCM Android Project
 
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - "AR-EDUPOINT-FCM-READY.zip"
 
 permissions:
   contents: write
@@ -33,9 +30,6 @@ jobs:
 
           unzip -q "$ZIP" -d /tmp/edupoint
 
-          echo "Extracted files:"
-          find /tmp/edupoint -maxdepth 3 -type f | head -100
-
           if [ -d "/tmp/edupoint/AR-EDUPOINT-FCM-READY" ]; then
             SRC="/tmp/edupoint/AR-EDUPOINT-FCM-READY"
           else
@@ -44,18 +38,19 @@ jobs:
 
           cp -a "$SRC"/. .
 
+          # Do NOT copy the Android build workflow automatically.
+          rm -f ".github/workflows/build-apk.yml"
+
+          # Remove the ZIP after extraction.
           rm -f "$ZIP"
 
-          # Remove this one-time extraction workflow
-          rm -f ".github/workflows/extract-project.yml"
-
-          echo "Final repository structure:"
+          echo "Project extracted successfully."
+          echo "Checking Android project..."
           ls -la
-          echo "Android app:"
-          ls -la app || true
-          echo "Workflows:"
-          ls -la .github/workflows || true
-
+          ls -la app
+          echo "Checking workflows..."
+          ls -la .github/workflows
+          
       - name: Commit extracted project
         run: |
           git config user.name "github-actions[bot]"
