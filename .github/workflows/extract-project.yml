@@ -14,44 +14,89 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Extract Android project
+      - name: Find v1.2 ZIP
         run: |
-          set -e
+          ZIP_FILE="AR-EDUPOINT-FCM-FIX-v1.2.zip"
 
-          ZIP="AR-EDUPOINT-FCM-READY.zip"
-
-          if [ ! -f "$ZIP" ]; then
-            echo "ZIP file not found."
+          if [ ! -f "$ZIP_FILE" ]; then
+            echo "ERROR: $ZIP_FILE not found in repository root."
+            echo "Files in repository:"
+            ls -la
             exit 1
           fi
 
-          rm -rf /tmp/edupoint
-          mkdir -p /tmp/edupoint
+          echo "Found: $ZIP_FILE"
 
-          unzip -q "$ZIP" -d /tmp/edupoint
+      - name: Extract v1.2 project
+        run: |
+          rm -rf extracted_project
+          mkdir extracted_project
 
-          if [ -d "/tmp/edupoint/AR-EDUPOINT-FCM-READY" ]; then
-            SRC="/tmp/edupoint/AR-EDUPOINT-FCM-READY"
+          unzip -q "AR-EDUPOINT-FCM-FIX-v1.2.zip" -d extracted_project
+
+          echo "ZIP extracted successfully."
+
+      - name: Find Gradle project root
+        run: |
+          if [ -f "extracted_project/settings.gradle" ] || [ -f "extracted_project/settings.gradle.kts" ]; then
+            echo "PROJECT_ROOT=extracted_project" >> "$GITHUB_ENV"
           else
-            SRC="/tmp/edupoint"
+            ROOT=$(find extracted_project -type f \
+              \( -name "settings.gradle" -o -name "settings.gradle.kts" \) \
+              -printf '%h\n' | head -n 1)
+
+            if [ -z "$ROOT" ]; then
+              echo "ERROR: Gradle project root not found."
+              exit 1
+            fi
+
+            echo "PROJECT_ROOT=$ROOT" >> "$GITHUB_ENV"
           fi
 
-          cp -a "$SRC"/. .
+      - name: Remove old Android project
+        run: |
+          rm -rf app
+          rm -rf gradle
 
-          # Do NOT copy the Android build workflow automatically.
-          rm -f ".github/workflows/build-apk.yml"
+          rm -f build.gradle
+          rm -f build.gradle.kts
+          rm -f settings.gradle
+          rm -f settings.gradle.kts
+          rm -f gradle.properties
+          rm -f local.properties
+          rm -f gradlew
+          rm -f gradlew.bat
 
-          # Remove the ZIP after extraction.
-          rm -f "$ZIP"
+          echo "Old Android project removed."
 
-          echo "Project extracted successfully."
-          echo "Checking Android project..."
-          ls -la
-          ls -la app
-          echo "Checking workflows..."
-          ls -la .github/workflows
-          
-      - name: Commit extracted project
+      - name: Copy v1.2 project
+        run: |
+          cp -a "$PROJECT_ROOT"/. .
+
+          echo "New v1.2 project copied."
+
+      - name: Verify v1.2
+        run: |
+          echo "Checking version..."
+
+          grep -n "versionCode\|versionName" app/build.gradle || true
+
+          if grep -q "versionCode 3" app/build.gradle && \
+             grep -q 'versionName .1.2.' app/build.gradle; then
+            echo "SUCCESS: FCM v1.2 project is installed."
+          else
+            echo "ERROR: v1.2 verification failed."
+            exit 1
+          fi
+
+      - name: Remove temporary extraction folder
+        run: |
+          rm -rf extracted_project
+
+          echo "Temporary folder removed."
+          echo "ZIP intentionally kept for safety."
+
+      - name: Commit project
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -59,9 +104,9 @@ jobs:
           git add -A
 
           if git diff --cached --quiet; then
-            echo "Nothing to commit."
+            echo "No changes detected."
             exit 0
           fi
 
-          git commit -m "Extract FCM Android project"
+          git commit -m "Install AR EDUPOINT FCM v1.2 project"
           git push
