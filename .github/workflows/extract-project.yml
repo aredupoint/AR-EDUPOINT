@@ -96,12 +96,19 @@ jobs:
           echo "Temporary folder removed."
           echo "ZIP intentionally kept for safety."
 
-      - name: Commit project
+          - name: Commit project
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
+          # Do not allow this workflow to modify the existing build workflow
+          git restore --staged .github/workflows/build-apk.yml 2>/dev/null || true
+          git checkout -- .github/workflows/build-apk.yml 2>/dev/null || true
+
           git add -A
+
+          # Again exclude build workflow from the commit
+          git restore --staged .github/workflows/build-apk.yml 2>/dev/null || true
 
           if git diff --cached --quiet; then
             echo "No changes detected."
