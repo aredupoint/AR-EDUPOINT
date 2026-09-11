@@ -101,8 +101,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    private static final String FCM_TOPIC = "ar_edupoint_all";
-
 private static final String FCM_TOPIC = "ar_edupoint_all";
 
 private void setupPushNotifications() {
