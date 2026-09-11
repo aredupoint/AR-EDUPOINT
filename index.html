@@ -617,6 +617,9 @@
   const SUPABASE_LOAD_TIMEOUT_MS = 7000;
   const SUPABASE_REALTIME_POLL_MS = 5000;
   const SUPABASE_BACKGROUND_TIMEOUT_MS = 7000;
+  // Firebase notification delivery is server-side. This public endpoint never contains
+  // a Firebase service-account secret; the secret stays in Supabase Edge Function secrets.
+  const CALENDAR_NOTIFICATION_FUNCTION = SUPABASE_URL.replace(/\/$/, '') + '/functions/v1/send-calendar-notification';
   const LOCAL_CACHE_PREFIX = 'ar-edupoint-cache:';
   const LOCAL_QUEUE_KEY = 'ar-edupoint-sync-queue:v1';
   // Dedicated durable mirror for staff attendance. This prevents attendance from disappearing
@@ -785,6 +788,35 @@
       }catch(e){lastErr=e;if(attempt<SUPABASE_MAX_RETRIES-1)await sleep(SUPABASE_RETRY_BASE_MS*Math.pow(2,attempt));}
     }
     throw lastErr||new Error('Supabase read failed.');
+  }
+
+  async function sendCalendarNotification(event){
+    if (!event || !event.title || !event.date) return false;
+    try {
+      const response = await withTimeout(fetch(CALENDAR_NOTIFICATION_FUNCTION, {
+        method: 'POST',
+        mode: 'cors',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': SUPABASE_KEY
+        },
+        body: JSON.stringify({
+          eventId: event.id,
+          title: event.title,
+          date: event.date,
+          details: event.details || ''
+        })
+      }), 8000);
+      if (!response.ok) {
+        let detail = '';
+        try { detail = await response.text(); } catch(e) {}
+        throw new Error('Notification HTTP ' + response.status + (detail ? ': ' + detail : ''));
+      }
+      return true;
+    } catch(e) {
+      console.warn('[Notifications] calendar push failed:', e);
+      return false;
+    }
   }
 
   function syncStatusText(){
@@ -1767,8 +1799,12 @@
         const title = c.querySelector('#cal-event-title').value.trim();
         const details = c.querySelector('#cal-event-details').value.trim();
         if(!date || !title) return;
-        STATE.calendarEvents.push({id:uid(), date, title, details, createdAt:new Date().toISOString(), createdBy:ME.name});
-        await save('calendarEvents','calendar-events');
+        const event = {id:uid(), date, title, details, createdAt:new Date().toISOString(), createdBy:ME.name};
+        STATE.calendarEvents.push(event);
+        const cloudSaved = await save('calendarEvents','calendar-events');
+        if (cloudSaved) {
+          await sendCalendarNotification(event);
+        }
         const d = new Date(`${date}T00:00:00`);
         CALENDAR_VIEW.selected = date; CALENDAR_VIEW.year=d.getFullYear(); CALENDAR_VIEW.month=d.getMonth();
         renderCalendar(c);
