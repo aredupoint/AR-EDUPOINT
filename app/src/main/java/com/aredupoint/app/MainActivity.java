@@ -103,28 +103,144 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String FCM_TOPIC = "ar_edupoint_all";
 
-    private void setupPushNotifications() {
-        // Android 13+ requires runtime notification permission.
-        if (android.os.Build.VERSION.SDK_INT >= 33 &&
-                checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
-            requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 7001);
+private static final String FCM_TOPIC = "ar_edupoint_all";
+
+private void setupPushNotifications() {
+    // Android 13+ requires runtime notification permission.
+    if (android.os.Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+
+        requestPermissions(
+                new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                7001
+        );
+    }
+
+    FirebaseMessaging messaging =
+            FirebaseMessaging.getInstance();
+
+    messaging.getToken()
+            .addOnSuccessListener(token -> {
+
+                android.util.Log.d(
+                        "AR_EDUPOINT",
+                        "FCM token obtained: " + token
+                );
+
+                // Register this device with Supabase.
+                registerFCMToken(token);
+
+                // Keep topic subscription as an additional backup.
+                messaging.subscribeToTopic(FCM_TOPIC)
+                        .addOnSuccessListener(unused ->
+                                android.util.Log.d(
+                                        "AR_EDUPOINT",
+                                        "FCM topic subscribed: " + FCM_TOPIC
+                                )
+                        )
+                        .addOnFailureListener(e ->
+                                android.util.Log.e(
+                                        "AR_EDUPOINT",
+                                        "FCM topic subscription failed",
+                                        e
+                                )
+                        );
+            })
+            .addOnFailureListener(e ->
+                    android.util.Log.e(
+                            "AR_EDUPOINT",
+                            "FCM token retrieval failed",
+                            e
+                    )
+            );
+}
+    private void registerFCMToken(String token) {
+
+    new Thread(() -> {
+
+        java.net.HttpURLConnection connection = null;
+
+        try {
+            java.net.URL url = new java.net.URL(
+                    "https://cmvhjrlydmvyfhsancit.supabase.co/functions/v1/register-fcm-token"
+            );
+
+            connection =
+                    (java.net.HttpURLConnection) url.openConnection();
+
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(10000);
+            connection.setReadTimeout(10000);
+            connection.setDoOutput(true);
+
+            connection.setRequestProperty(
+                    "Content-Type",
+                    "application/json"
+            );
+
+            connection.setRequestProperty(
+                    "apikey",
+                    "sb_publishable_SsOLieR8Wiy-nH9L2vq1OA_zetGVghR"
+            );
+
+            String safeToken = token
+                    .replace("\\", "\\\\")
+                    .replace("\"", "\\\"");
+
+            String json =
+                    "{\"token\":\"" +
+                    safeToken +
+                    "\",\"platform\":\"android\"}";
+
+            try (java.io.OutputStream os =
+                         connection.getOutputStream()) {
+
+                byte[] input =
+                        json.getBytes(
+                                java.nio.charset.StandardCharsets.UTF_8
+                        );
+
+                os.write(input, 0, input.length);
+            }
+
+            int responseCode =
+                    connection.getResponseCode();
+
+            if (responseCode >= 200 &&
+                    responseCode < 300) {
+
+                android.util.Log.d(
+                        "AR_EDUPOINT",
+                        "FCM token registered successfully"
+                );
+
+            } else {
+
+                android.util.Log.e(
+                        "AR_EDUPOINT",
+                        "FCM token registration failed. HTTP " +
+                        responseCode
+                );
+            }
+
+        } catch (Exception e) {
+
+            android.util.Log.e(
+                    "AR_EDUPOINT",
+                    "FCM token registration error",
+                    e
+            );
+
+        } finally {
+
+            if (connection != null) {
+                connection.disconnect();
+            }
         }
 
-        // Explicitly initialize FCM, obtain the registration token, then subscribe
-        // to the broadcast topic. This also gives us a reliable diagnostic path.
-        FirebaseMessaging messaging = FirebaseMessaging.getInstance();
-        messaging.getToken()
-                .addOnSuccessListener(token -> {
-                    android.util.Log.d("AR_EDUPOINT", "FCM token obtained: " + token);
-                    messaging.subscribeToTopic(FCM_TOPIC)
-                            .addOnSuccessListener(unused ->
-                                    android.util.Log.d("AR_EDUPOINT", "FCM topic subscribed: " + FCM_TOPIC))
-                            .addOnFailureListener(e ->
-                                    android.util.Log.e("AR_EDUPOINT", "FCM topic subscription failed", e));
-                })
-                .addOnFailureListener(e ->
-                        android.util.Log.e("AR_EDUPOINT", "FCM token retrieval failed", e));
-    }
+    }).start();
+}
 
     private void createNotificationChannel() {
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
