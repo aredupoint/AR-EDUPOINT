@@ -1,0 +1,111 @@
+name: Extract AR EDUPOINT FCM v1.2 Project
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Find uploaded ZIP
+        run: |
+          ZIP_FILE=$(find . -maxdepth 1 -type f -name "AR-EDUPOINT-FCM-FIX-v1.2.zip" | head -n 1)
+
+          if [ -z "$ZIP_FILE" ]; then
+            echo "ERROR: AR-EDUPOINT-FCM-FIX-v1.2.zip not found."
+            exit 1
+          fi
+
+          echo "Found ZIP: $ZIP_FILE"
+          echo "ZIP_FILE=$ZIP_FILE" >> "$GITHUB_ENV"
+
+      - name: Extract new project
+        run: |
+          rm -rf extracted_project
+          mkdir extracted_project
+
+          unzip -q "$ZIP_FILE" -d extracted_project
+
+          echo "Extracted files:"
+          find extracted_project -maxdepth 3 -type f | head -100
+
+      - name: Detect project root
+        run: |
+          if [ -f "extracted_project/settings.gradle" ] || [ -f "extracted_project/settings.gradle.kts" ]; then
+            echo "PROJECT_ROOT=extracted_project" >> "$GITHUB_ENV"
+          else
+            ROOT=$(find extracted_project -type f \( -name "settings.gradle" -o -name "settings.gradle.kts" \) -printf '%h\n' | head -n 1)
+
+            if [ -z "$ROOT" ]; then
+              echo "ERROR: Gradle project root not found."
+              exit 1
+            fi
+
+            echo "PROJECT_ROOT=$ROOT" >> "$GITHUB_ENV"
+          fi
+
+      - name: Remove old project files
+        run: |
+          echo "Removing old Android project files..."
+
+          rm -rf app
+          rm -rf gradle
+          rm -f build.gradle
+          rm -f build.gradle.kts
+          rm -f settings.gradle
+          rm -f settings.gradle.kts
+          rm -f gradle.properties
+          rm -f local.properties
+          rm -f gradlew
+          rm -f gradlew.bat
+          rm -f gradle-wrapper.jar
+          rm -f gradle-wrapper.properties
+          rm -f index.html
+          rm -f AndroidManifest.xml
+
+          echo "Old project files removed."
+
+      - name: Copy new project
+        run: |
+          echo "Copying new FCM v1.2 project..."
+
+          cp -a "$PROJECT_ROOT"/. .
+
+          echo "New project copied."
+
+      - name: Remove temporary files
+        run: |
+          rm -rf extracted_project
+          rm -f "$ZIP_FILE"
+
+          echo "Temporary files removed."
+
+      - name: Show final project
+        run: |
+          echo "Final repository structure:"
+          find . -maxdepth 3 -type f \
+            ! -path "./.git/*" \
+            ! -path "./.github/*" \
+            | sort | head -150
+
+      - name: Commit and push project
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+
+          git commit -m "Replace Android project with FCM v1.2"
+          git push
