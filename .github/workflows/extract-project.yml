@@ -1,0 +1,72 @@
+name: Extract FCM Android Project
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "AR-EDUPOINT-FCM-READY.zip"
+
+permissions:
+  contents: write
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Extract Android project
+        run: |
+          set -e
+
+          ZIP="AR-EDUPOINT-FCM-READY.zip"
+
+          if [ ! -f "$ZIP" ]; then
+            echo "ZIP file not found."
+            exit 1
+          fi
+
+          rm -rf /tmp/edupoint
+          mkdir -p /tmp/edupoint
+
+          unzip -q "$ZIP" -d /tmp/edupoint
+
+          echo "Extracted files:"
+          find /tmp/edupoint -maxdepth 3 -type f | head -100
+
+          if [ -d "/tmp/edupoint/AR-EDUPOINT-FCM-READY" ]; then
+            SRC="/tmp/edupoint/AR-EDUPOINT-FCM-READY"
+          else
+            SRC="/tmp/edupoint"
+          fi
+
+          cp -a "$SRC"/. .
+
+          rm -f "$ZIP"
+
+          # Remove this one-time extraction workflow
+          rm -f ".github/workflows/extract-project.yml"
+
+          echo "Final repository structure:"
+          ls -la
+          echo "Android app:"
+          ls -la app || true
+          echo "Workflows:"
+          ls -la .github/workflows || true
+
+      - name: Commit extracted project
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add -A
+
+          if git diff --cached --quiet; then
+            echo "Nothing to commit."
+            exit 0
+          fi
+
+          git commit -m "Extract FCM Android project"
+          git push
