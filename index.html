@@ -3595,6 +3595,15 @@
 </style>
 
 <style id="v60-mobile-welcome-auto-scale">
+/* v61 — Match the mobile login page scale to the compact welcome-page scale.
+   Visual sizing only; login functionality and layout logic are untouched. */
+@media (max-width:520px){
+  #app-root .portal-login-content{
+    transform:scale(.58);
+    transform-origin:top center;
+  }
+}
+
 /* v60 — Make the welcome screen open at the same compact scale
    shown after manual zoom-out on mobile. Functionality is untouched. */
 @media (max-width:520px){
