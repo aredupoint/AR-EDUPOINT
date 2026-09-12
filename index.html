@@ -3623,3 +3623,142 @@
   }
 }
 </style>
+
+<style id="v62-login-reference-mobile">
+/* v62 — Mobile login layout matched to the supplied reference screenshot.
+   Visual/layout CSS only; all login functionality remains unchanged. */
+@media (max-width:520px){
+  /* Do NOT apply the welcome-page compact transform to the login composition. */
+  #app-root .portal-login-content{
+    transform:none !important;
+    transform-origin:center center !important;
+    width:100% !important;
+    max-width:560px !important;
+    margin:0 auto !important;
+  }
+  #app-root .portal-login-screen{
+    padding:26px 10px 54px !important;
+    min-height:100dvh !important;
+    box-sizing:border-box !important;
+  }
+  #app-root .portal-brand-head{
+    width:100% !important;
+    max-width:540px !important;
+    gap:18px !important;
+    padding:0 4px !important;
+  }
+  #app-root .portal-brand-logo{
+    width:88px !important;
+    height:88px !important;
+    flex-basis:88px !important;
+  }
+  #app-root .portal-brand-block h1{
+    font-size:1.72rem !important;
+    line-height:1 !important;
+    white-space:nowrap !important;
+  }
+  #app-root .portal-place{
+    margin-top:7px !important;
+    font-size:.78rem !important;
+    letter-spacing:.19em !important;
+  }
+  #app-root .portal-description{
+    margin:7px 0 5px !important;
+    font-size:.67rem !important;
+    line-height:1.25 !important;
+  }
+  #app-root .portal-subjects{
+    font-size:.62rem !important;
+    gap:6px !important;
+  }
+  #app-root .portal-login-heading{
+    margin:34px auto 7px !important;
+  }
+  #app-root .portal-login-title{
+    font-size:1.42rem !important;
+    line-height:1.15 !important;
+    margin-bottom:17px !important;
+  }
+  #app-root .portal-login-title:after{
+    width:86px !important;
+    height:2px !important;
+    margin-top:12px !important;
+  }
+  #app-root .portal-role-grid{
+    width:100% !important;
+    max-width:540px !important;
+    gap:18px !important;
+    margin:0 auto !important;
+  }
+  #app-root .portal-role-card{
+    width:100% !important;
+    border-radius:18px !important;
+    box-sizing:border-box !important;
+  }
+  #app-root .portal-role-top{
+    min-height:78px !important;
+    padding:13px 22px !important;
+    gap:17px !important;
+    border-radius:14px 14px 0 0 !important;
+  }
+  #app-root .portal-role-icon{
+    width:52px !important;
+    height:52px !important;
+    flex-basis:52px !important;
+  }
+  #app-root .portal-role-icon svg{
+    width:42px !important;
+    height:42px !important;
+  }
+  #app-root .portal-role-top strong{
+    font-size:1.35rem !important;
+    line-height:1.05 !important;
+  }
+  #app-root .portal-role-body{
+    padding:14px 24px 20px !important;
+  }
+  #app-root .portal-field{
+    margin-bottom:12px !important;
+  }
+  #app-root .portal-field label{
+    font-size:.82rem !important;
+    margin-bottom:5px !important;
+  }
+  #app-root .portal-field input,
+  #app-root .portal-field select{
+    min-height:43px !important;
+    padding:9px 13px !important;
+    border-radius:11px !important;
+    font-size:.83rem !important;
+    box-sizing:border-box !important;
+  }
+  #app-root .portal-login-btn{
+    min-height:43px !important;
+    margin-top:5px !important;
+    border-radius:23px !important;
+    font-size:.92rem !important;
+  }
+  #app-root .portal-help{
+    margin:20px auto 0 !important;
+    padding:10px 16px !important;
+    max-width:300px !important;
+    border-radius:14px !important;
+  }
+  #app-root .portal-help-icon{
+    width:40px !important;
+    height:40px !important;
+  }
+  #app-root .portal-help strong{font-size:.86rem !important}
+  #app-root .portal-help small{font-size:.62rem !important}
+}
+@media (max-width:380px){
+  #app-root .portal-brand-logo{width:78px !important;height:78px !important;flex-basis:78px !important}
+  #app-root .portal-brand-head{gap:12px !important}
+  #app-root .portal-brand-block h1{font-size:1.48rem !important}
+  #app-root .portal-place{font-size:.68rem !important}
+  #app-root .portal-description{font-size:.60rem !important}
+  #app-root .portal-subjects{font-size:.56rem !important}
+  #app-root .portal-role-top{padding-left:16px !important;padding-right:16px !important}
+  #app-root .portal-role-body{padding-left:18px !important;padding-right:18px !important}
+}
+</style>
