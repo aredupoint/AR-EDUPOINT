@@ -3593,3 +3593,24 @@
 #app-root .tracker-note{color:var(--ink-soft)!important;font-weight:500!important}
 #app-root .tracker-note b{color:var(--ink)!important;font-weight:800!important}
 </style>
+
+<style id="v60-mobile-welcome-auto-scale">
+/* v60 — Make the welcome screen open at the same compact scale
+   shown after manual zoom-out on mobile. Functionality is untouched. */
+@media (max-width:520px){
+  #app-root .welcome-content{
+    transform:scale(.58);
+    transform-origin:center center;
+  }
+
+  /* Keep the existing entrance animation while preserving the compact scale. */
+  #app-root .welcome-screen.entering .welcome-content{
+    animation-name:welcomeEnterCompact;
+  }
+
+  @keyframes welcomeEnterCompact{
+    from{opacity:.55;transform:translateY(8px) scale(.58)}
+    to{opacity:1;transform:translateY(0) scale(.58)}
+  }
+}
+</style>
