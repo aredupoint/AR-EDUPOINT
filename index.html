@@ -1485,31 +1485,40 @@
             </section>
           </div>
 
-          <a class="portal-help" id="portal-need-help" href="mailto:aredupointafz@gmail.com?subject=AR%20EDUPOINT%20Help%20Request" target="_blank" rel="noopener" role="button" aria-label="Need Help? Email the administrator for assistance">
+          <button class="portal-help" id="portal-help-btn" type="button" aria-label="Need Help? Contact the administrator">
             <span class="portal-help-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18v-5a5 5 0 0 1 10 0v5"></path><path d="M5 14H4a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h1M19 14h1a2 2 0 0 0 2 2v1a2 2 0 0 0-2 2h-1"></path><path d="M9 21h6"></path></svg></span>
             <span><strong>Need Help?</strong><small>Contact your administrator for assistance.</small></span>
-          </a>
+          </button>
         </main>
       </div>
     `;
-
-    // Need Help: keep it reliably tappable in Android WebView and normal browsers.
-    const helpLink = document.getElementById('portal-need-help');
-    if (helpLink) {
-      helpLink.style.position = 'relative';
-      helpLink.style.zIndex = '50';
-      helpLink.style.pointerEvents = 'auto';
-      helpLink.addEventListener('click', (ev) => {
-        ev.stopPropagation();
-        const mailto = 'mailto:aredupointafz@gmail.com?subject=AR%20EDUPOINT%20Help%20Request';
-        try { window.location.href = mailto; } catch (_) {}
-      });
-    }
 
     const rs = document.getElementById('role-student');
     const rt = document.getElementById('role-teacher');
     if (rs) rs.onclick = () => { LOGIN_ROLE = 'student'; LOGIN_ERR=''; render(); };
     if (rt) rt.onclick = () => { LOGIN_ROLE = 'teacher'; LOGIN_ERR=''; render(); };
+
+    // Android WebView-safe Need Help: do not depend on mailto: navigation.
+    const helpBtn = document.getElementById('portal-help-btn');
+    if (helpBtn) helpBtn.onclick = () => {
+      const email = 'aredupointafz@gmail.com';
+      const subject = 'AR EDUPOINT Help Request';
+      const ok = confirm('Need help with AR EDUPOINT?\n\nPress OK to open your email app.');
+      if (!ok) return;
+      const mailto = `mailto:${email}?subject=${encodeURIComponent(subject)}`;
+      // Try the system email handler. If the WebView blocks external schemes,
+      // the user still gets the contact address copied as a fallback.
+      try { window.location.href = mailto; } catch (e) {}
+      setTimeout(async () => {
+        try {
+          if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(email);
+          else { const ta=document.createElement('textarea'); ta.value=email; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+          alert('If the email app did not open, the administrator email has been copied.');
+        } catch (e) {
+          alert('Please contact the administrator at: ' + email);
+        }
+      }, 700);
+    };
 
     const stuBoard = document.getElementById('stu-board');
     if (stuBoard) stuBoard.onchange = (e) => {
@@ -4292,16 +4301,23 @@
 }
 </style>
 
-<style id="need-help-final-accessibility-fix">
-#app-root .portal-login-screen .portal-login-content .portal-help{
-  position:relative!important;
-  z-index:50!important;
-  pointer-events:auto!important;
+<style id="android-webview-login-help-fix">
+/* Android WebView: Need Help must be a real, tappable button. */
+#app-root .portal-help{
+  -webkit-appearance:none!important; appearance:none!important;
+  display:flex!important; width:min(100%,500px)!important;
+  box-sizing:border-box!important;
+  border:1px solid #D9C8A4!important;
   cursor:pointer!important;
+  pointer-events:auto!important;
+  position:relative!important; z-index:20!important;
   touch-action:manipulation!important;
-  -webkit-tap-highlight-color:rgba(11,79,74,.16)!important;
+  font:inherit!important; text-align:left!important;
 }
-#app-root .portal-login-screen .portal-login-content .portal-help *{
-  pointer-events:none!important;
+#app-root .portal-help *{pointer-events:none!important;}
+#app-root .portal-help:active{transform:scale(.99)!important;}
+#content #study-file{
+  pointer-events:auto!important;
+  touch-action:manipulation!important;
 }
 </style>
