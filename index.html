@@ -1485,9 +1485,9 @@
             </section>
           </div>
 
-          <a class="portal-help" href="mailto:aredupointafz@gmail.com?subject=AR%20EDUPOINT%20Help%20Request" aria-label="Need Help? Email the administrator for assistance">
+          <a class="portal-help" href="https://mail.google.com/mail/u/0/?view=cm&fs=1&to=aredupointafz%40gmail.com&su=AR%20EDUPOINT%20Help%20Request" aria-label="Need Help? Open Gmail to contact the administrator">
             <span class="portal-help-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18v-5a5 5 0 0 1 10 0v5"></path><path d="M5 14H4a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h1M19 14h1a2 2 0 0 0 2 2v1a2 2 0 0 0-2 2h-1"></path><path d="M9 21h6"></path></svg></span>
-            <span><strong>Need Help?</strong><small>Contact your administrator for assistance.</small></span>
+            <span><strong>Need Help?</strong><small>Open Gmail to contact your administrator.</small></span>
           </a>
         </main>
       </div>
@@ -2188,8 +2188,10 @@
             <input id="study-due" type="date" value="${escapeHtml(editing?.dueDate || '')}">
           </label>
 
-          <label class="study-field study-full study-file-label">PDF file
-            <input id="study-file" type="file" accept="application/pdf,.pdf" ${editing ? '' : 'required'}>
+          <label class="study-field study-full study-file-label" for="study-file">
+            <span class="study-field-label">PDF file</span>
+            <input id="study-file" name="study-file" type="file" accept="application/pdf,.pdf" ${editing ? '' : 'required'} aria-label="Choose PDF file">
+            <span class="study-file-note">PDF only · max 25 MB</span>
           </label>
 
           <label class="study-field study-full">
@@ -4352,4 +4354,57 @@
   -webkit-appearance:auto !important;
   appearance:auto !important;
 }
+</style>
+
+
+<style id="android-webview-native-controls-final-v2">
+/* Android WebView FINAL v2: no overlay, no opacity tricks, no JS file-input click. */
+#app-root .portal-help{
+  display:flex!important;
+  position:relative!important;
+  z-index:99999!important;
+  pointer-events:auto!important;
+  touch-action:manipulation!important;
+  cursor:pointer!important;
+}
+#app-root .portal-help *{pointer-events:none!important;}
+#content .study-file-label{
+  display:block!important;
+  position:relative!important;
+  z-index:20!important;
+  width:100%!important;
+  box-sizing:border-box!important;
+  pointer-events:auto!important;
+  cursor:pointer!important;
+  overflow:visible!important;
+}
+#content .study-file-label .study-field-label{
+  display:block!important;
+  margin-bottom:6px!important;
+  pointer-events:none!important;
+}
+#content #study-file{
+  display:block!important;
+  visibility:visible!important;
+  opacity:1!important;
+  position:static!important;
+  width:100%!important;
+  min-width:0!important;
+  min-height:48px!important;
+  height:auto!important;
+  margin:0!important;
+  padding:8px!important;
+  box-sizing:border-box!important;
+  pointer-events:auto!important;
+  cursor:pointer!important;
+  -webkit-appearance:auto!important;
+  appearance:auto!important;
+  touch-action:manipulation!important;
+}
+#content .study-file-label .study-file-note{
+  display:block!important;
+  margin-top:6px!important;
+  pointer-events:none!important;
+}
+@media(max-width:700px){#content #study-file{min-height:52px!important;font-size:13px!important;}}
 </style>
