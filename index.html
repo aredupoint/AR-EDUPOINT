@@ -1485,10 +1485,10 @@
             </section>
           </div>
 
-          <button class="portal-help" id="portal-help-btn" type="button" aria-label="Need Help? Contact the administrator">
+          <a class="portal-help" href="mailto:aredupointafz@gmail.com?subject=AR%20EDUPOINT%20Help%20Request" aria-label="Need Help? Email the administrator for assistance">
             <span class="portal-help-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18v-5a5 5 0 0 1 10 0v5"></path><path d="M5 14H4a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h1M19 14h1a2 2 0 0 0 2 2v1a2 2 0 0 0-2 2h-1"></path><path d="M9 21h6"></path></svg></span>
             <span><strong>Need Help?</strong><small>Contact your administrator for assistance.</small></span>
-          </button>
+          </a>
         </main>
       </div>
     `;
@@ -1497,28 +1497,6 @@
     const rt = document.getElementById('role-teacher');
     if (rs) rs.onclick = () => { LOGIN_ROLE = 'student'; LOGIN_ERR=''; render(); };
     if (rt) rt.onclick = () => { LOGIN_ROLE = 'teacher'; LOGIN_ERR=''; render(); };
-
-    // Android WebView-safe Need Help: do not depend on mailto: navigation.
-    const helpBtn = document.getElementById('portal-help-btn');
-    if (helpBtn) helpBtn.onclick = () => {
-      const email = 'aredupointafz@gmail.com';
-      const subject = 'AR EDUPOINT Help Request';
-      const ok = confirm('Need help with AR EDUPOINT?\n\nPress OK to open your email app.');
-      if (!ok) return;
-      const mailto = `mailto:${email}?subject=${encodeURIComponent(subject)}`;
-      // Try the system email handler. If the WebView blocks external schemes,
-      // the user still gets the contact address copied as a fallback.
-      try { window.location.href = mailto; } catch (e) {}
-      setTimeout(async () => {
-        try {
-          if (navigator.clipboard && window.isSecureContext) await navigator.clipboard.writeText(email);
-          else { const ta=document.createElement('textarea'); ta.value=email; ta.style.position='fixed'; ta.style.opacity='0'; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
-          alert('If the email app did not open, the administrator email has been copied.');
-        } catch (e) {
-          alert('Please contact the administrator at: ' + email);
-        }
-      }, 700);
-    };
 
     const stuBoard = document.getElementById('stu-board');
     if (stuBoard) stuBoard.onchange = (e) => {
@@ -2210,13 +2188,11 @@
             <input id="study-due" type="date" value="${escapeHtml(editing?.dueDate || '')}">
           </label>
 
-          <div class="study-field study-full">
+          <label class="study-field study-full study-file-label">
             <span class="study-field-label">${icon('file')}PDF file</span>
-            <div class="study-file-native-wrap">
-              <input id="study-file" class="study-file-native-visible" type="file" accept=".pdf,application/pdf" aria-label="Choose PDF file">
-              <span class="study-file-note">PDF only · max 25 MB</span>
-            </div>
-          </div>
+            <input id="study-file" class="study-file-native-visible" type="file" accept="application/pdf,.pdf" ${editing ? '' : 'required'} aria-label="Choose PDF file">
+            <span class="study-file-note">PDF only · max 25 MB</span>
+          </label>
 
           <label class="study-field study-full">
             <span class="study-field-label">${icon('title')}Title</span>
@@ -4301,23 +4277,47 @@
 }
 </style>
 
-<style id="android-webview-login-help-fix">
-/* Android WebView: Need Help must be a real, tappable button. */
+<style id="android-webview-function-compat-final">
+/* Android WebView compatibility: restore the native elements used by the original working app. */
 #app-root .portal-help{
-  -webkit-appearance:none!important; appearance:none!important;
-  display:flex!important; width:min(100%,500px)!important;
+  display:flex!important;
+  width:min(100%,500px)!important;
   box-sizing:border-box!important;
-  border:1px solid #D9C8A4!important;
-  cursor:pointer!important;
+  position:relative!important;
+  z-index:20!important;
   pointer-events:auto!important;
-  position:relative!important; z-index:20!important;
   touch-action:manipulation!important;
-  font:inherit!important; text-align:left!important;
+  cursor:pointer!important;
+  text-decoration:none!important;
 }
 #app-root .portal-help *{pointer-events:none!important;}
-#app-root .portal-help:active{transform:scale(.99)!important;}
-#content #study-file{
+#content .study-file-label{
+  cursor:pointer!important;
+  position:relative!important;
+  z-index:2!important;
   pointer-events:auto!important;
+}
+#content .study-file-label .study-file-native-visible{
+  display:block!important;
+  visibility:visible!important;
+  opacity:1!important;
+  pointer-events:auto!important;
+  position:relative!important;
+  z-index:3!important;
+  width:100%!important;
+  min-height:49px!important;
+  box-sizing:border-box!important;
+  cursor:pointer!important;
+  -webkit-appearance:auto!important;
+  appearance:auto!important;
   touch-action:manipulation!important;
+}
+#content .study-file-label .study-file-note{
+  display:block!important;
+  margin-top:6px!important;
+  pointer-events:none!important;
+}
+@media(max-width:700px){
+  #content .study-file-label .study-file-native-visible{min-height:52px!important;}
 }
 </style>
