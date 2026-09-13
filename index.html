@@ -1485,13 +1485,32 @@
             </section>
           </div>
 
-          <a class="portal-help" href="https://mail.google.com/mail/u/0/?view=cm&fs=1&to=aredupointafz%40gmail.com&su=AR%20EDUPOINT%20Help%20Request" aria-label="Need Help? Open Gmail to contact the administrator">
+          <a class="portal-help" href="googlegmail://co?to=aredupointafz%40gmail.com&subject=AR%20EDUPOINT%20Help%20Request" data-gmail-to="aredupointafz@gmail.com" data-gmail-subject="AR EDUPOINT Help Request" aria-label="Need Help? Open Gmail to contact the administrator">
             <span class="portal-help-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 18v-5a5 5 0 0 1 10 0v5"></path><path d="M5 14H4a2 2 0 0 0-2 2v1a2 2 0 0 0 2 2h1M19 14h1a2 2 0 0 0 2 2v1a2 2 0 0 0-2 2h-1"></path><path d="M9 21h6"></path></svg></span>
             <span><strong>Need Help?</strong><small>Open Gmail to contact your administrator.</small></span>
           </a>
         </main>
       </div>
     `;
+
+    const helpLink = document.querySelector('#app-root .portal-help');
+    if (helpLink) {
+      helpLink.onclick = function(e) {
+        e.preventDefault();
+        const to = this.getAttribute('data-gmail-to') || 'aredupointafz@gmail.com';
+        const subject = this.getAttribute('data-gmail-subject') || 'AR EDUPOINT Help Request';
+        const deepLink = 'googlegmail://co?to=' + encodeURIComponent(to) + '&subject=' + encodeURIComponent(subject);
+        const webCompose = 'https://mail.google.com/mail/u/0/?view=cm&fs=1&to=' + encodeURIComponent(to) + '&su=' + encodeURIComponent(subject);
+        let leftPage = false;
+        const onHidden = () => { leftPage = true; };
+        document.addEventListener('visibilitychange', onHidden, {once:true});
+        window.location.href = deepLink;
+        setTimeout(() => {
+          if (!leftPage && document.visibilityState === 'visible') window.location.href = webCompose;
+        }, 900);
+        return false;
+      };
+    }
 
     const rs = document.getElementById('role-student');
     const rt = document.getElementById('role-teacher');
@@ -4407,4 +4426,9 @@
   pointer-events:none!important;
 }
 @media(max-width:700px){#content #study-file{min-height:52px!important;font-size:13px!important;}}
+</style>
+
+<style id="gmail-app-direct-fix">
+#app-root .portal-help{position:relative!important;z-index:50!important;pointer-events:auto!important;touch-action:manipulation!important;-webkit-tap-highlight-color:transparent!important;}
+#app-root .portal-help *{pointer-events:none!important;}
 </style>
