@@ -2188,10 +2188,8 @@
             <input id="study-due" type="date" value="${escapeHtml(editing?.dueDate || '')}">
           </label>
 
-          <label class="study-field study-full study-file-label">
-            <span class="study-field-label">${icon('file')}PDF file</span>
-            <input id="study-file" class="study-file-native-visible" type="file" accept="application/pdf,.pdf" ${editing ? '' : 'required'} aria-label="Choose PDF file">
-            <span class="study-file-note">PDF only · max 25 MB</span>
+          <label class="study-field study-full study-file-label">PDF file
+            <input id="study-file" type="file" accept="application/pdf,.pdf" ${editing ? '' : 'required'}>
           </label>
 
           <label class="study-field study-full">
@@ -4319,5 +4317,39 @@
 }
 @media(max-width:700px){
   #content .study-file-label .study-file-native-visible{min-height:52px!important;}
+}
+</style>
+
+<style id="android-webview-native-controls-final">
+/* Final Android WebView fix: keep the two controls completely native/simple. */
+#app-root .portal-help{
+  display:flex !important;
+  position:relative !important;
+  z-index:9999 !important;
+  pointer-events:auto !important;
+  touch-action:auto !important;
+  -webkit-tap-highlight-color:transparent !important;
+}
+#app-root .portal-help *{pointer-events:none !important;}
+#content .study-file-label{
+  display:block !important;
+  position:relative !important;
+  z-index:10 !important;
+  pointer-events:auto !important;
+  overflow:visible !important;
+}
+#content #study-file{
+  display:block !important;
+  visibility:visible !important;
+  opacity:1 !important;
+  position:static !important;
+  z-index:auto !important;
+  width:100% !important;
+  min-height:44px !important;
+  box-sizing:border-box !important;
+  pointer-events:auto !important;
+  touch-action:auto !important;
+  -webkit-appearance:auto !important;
+  appearance:auto !important;
 }
 </style>
